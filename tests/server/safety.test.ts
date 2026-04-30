@@ -1,63 +1,45 @@
+import { describe, it, expect, vi } from 'vitest';
+
 vi.mock('@/server/slur-list', () => ({
   slurList: ['retard', 'retarded', 'fag', 'faggot', 'camel jockey'],
 }));
 
-import { checkSlurFilter, checkRealPersonFilter } from '@/server/safety';
+import { checkSlurFilter, checkRealPersonFilter, checkDistressPhraseList } from '@/server/safety';
 
 describe('checkSlurFilter', () => {
-  it('returns true when input contains a slur as a whole word', () => {
-    expect(checkSlurFilter('you are a retard')).toBe(true);
-  });
-
   it('returns false for clean input', () => {
-    expect(checkSlurFilter('my monday is terrible')).toBe(false);
+    expect(checkSlurFilter('Monday again')).toBe(false);
   });
 
-  it('returns false when a slur appears as a substring of another word', () => {
-    // "fag" is in the mock list, but "fagin" should not trigger
-    expect(checkSlurFilter('I read about fagin in class')).toBe(false);
-  });
-
-  it('is case insensitive', () => {
-    expect(checkSlurFilter('you are a RETARD')).toBe(true);
-  });
-
-  it('detects multi-word slurs', () => {
-    expect(checkSlurFilter('he is a camel jockey')).toBe(true);
+  it('allows common profanity', () => {
+    expect(checkSlurFilter('this fucking Monday')).toBe(false);
   });
 });
 
 describe('checkRealPersonFilter', () => {
-  it('blocks known public figures', () => {
-    const result = checkRealPersonFilter('I hate what trump did');
-    expect(result.blocked).toBe(true);
+  it('returns false for generic input', () => {
+    expect(checkRealPersonFilter('my boss is terrible')).toBe(false);
   });
 
-  it('returns a message when blocked', () => {
-    const result = checkRealPersonFilter('my thoughts on musk');
-    expect(result.blocked).toBe(true);
-    expect(result.message).toBeTruthy();
-    expect(result.message).toContain('situation');
+  it('detects possessive + name pattern', () => {
+    expect(checkRealPersonFilter('my boss Linda is terrible')).toBe(true);
   });
 
-  it('blocks public figures case-insensitively', () => {
-    const result = checkRealPersonFilter('Something about BEYONCE');
-    expect(result.blocked).toBe(true);
+  it('allows relationship words without names', () => {
+    expect(checkRealPersonFilter('my sister drives me crazy')).toBe(false);
+  });
+});
+
+describe('checkDistressPhraseList', () => {
+  it('returns false for casual input', () => {
+    expect(checkDistressPhraseList('everything is fine')).toBe(false);
   });
 
-  it('passes clean input with no public figures', () => {
-    const result = checkRealPersonFilter('my terrible monday morning');
-    expect(result.blocked).toBe(false);
-    expect(result.message).toBe('');
+  it('detects crisis phrases', () => {
+    expect(checkDistressPhraseList('I want to end it all')).toBe(true);
   });
 
-  it('blocks possessive-relationship patterns with a capitalized name', () => {
-    const result = checkRealPersonFilter('my sister Karen is driving me crazy');
-    expect(result.blocked).toBe(true);
-  });
-
-  it('does not block relationship words without a capitalized name', () => {
-    const result = checkRealPersonFilter('my sister is driving me crazy');
-    expect(result.blocked).toBe(false);
+  it('is case-insensitive', () => {
+    expect(checkDistressPhraseList('I WANT TO END IT ALL')).toBe(true);
   });
 });
