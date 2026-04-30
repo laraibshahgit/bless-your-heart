@@ -1,45 +1,70 @@
 import { z } from 'zod';
-import { checkSynonymMap } from './synonyms';
-import { checkTone, getAnthropicClient } from './anthropic';
 import type { GenerationOutput } from '@/types';
+import { checkSynonymMap } from './synonyms';
 
 const GenerationSchema = z.object({
   line1: z.string().trim().min(1).max(60),
   line2: z.string().trim().min(1).max(100),
 }).strict();
 
+export function parseGenerationOutput(raw: string): GenerationOutput | null {
+  const cleaned = raw
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    const result = GenerationSchema.safeParse(parsed);
+    if (!result.success) return null;
+    return result.data;
+  } catch {
+    return null;
+  }
+}
+
 const STOPWORDS = new Set([
-  'a', 'an', 'the', 'is', 'it', 'in', 'on', 'at', 'to', 'of', 'for',
-  'and', 'or', 'but', 'not', 'no', 'my', 'me', 'i', 'am', 'was',
-  'has', 'had', 'have', 'been', 'be', 'do', 'does', 'did', 'will',
-  'just', 'so', 'up', 'out', 'all', 'its', 'this', 'that', 'with',
+  'i', 'me', 'my', 'we', 'our', 'you', 'your', 'he', 'she', 'it', 'they',
+  'the', 'a', 'an', 'is', 'am', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
+  'may', 'might', 'must', 'shall', 'can', 'need', 'dare', 'ought', 'used',
+  'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into',
+  'through', 'during', 'before', 'after', 'above', 'below', 'between', 'out',
+  'and', 'but', 'or', 'nor', 'not', 'so', 'yet', 'both', 'either', 'neither',
+  'that', 'which', 'who', 'whom', 'this', 'these', 'those', 'what', 'when',
+  'where', 'how', 'all', 'each', 'every', 'no', 'any', 'few', 'more', 'most',
+  'other', 'some', 'such', 'than', 'too', 'very', 'just', 'about', 'again',
+  'also', 'back', 'even', 'still', 'then', 'there', 'here', 'now', 'up',
+  'going', 'really', 'much', 'one', 'two', 'get', 'got', 'like', 'know',
+  'think', 'make', 'go', 'see', 'come', 'take', 'want', 'look', 'give',
+  'been', "don't", "can't", "won't", "didn't", "isn't", "it's", "i'm",
 ]);
 
 function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s]/g, '')
-    .split(/\s+/)
-    .filter(Boolean);
+  return text.toLowerCase().replace(/[^\w\s'-]/g, '').split(/\s+/).filter(Boolean);
 }
 
 function stem(word: string): string {
-  if (word.endsWith('ing') && word.length > 5) return word.slice(0, -3);
-  if (word.endsWith('ed') && word.length > 4) return word.slice(0, -2);
-  if (word.endsWith('s') && !word.endsWith('ss') && word.length > 3) return word.slice(0, -1);
-  return word;
+  return word
+    .replace(/ing$/, '')
+    .replace(/ed$/, '')
+    .replace(/ly$/, '')
+    .replace(/s$/, '');
 }
 
 function isOffTopic(prompt: string): boolean {
   if (prompt.includes('?')) return true;
-  const tokens = tokenize(prompt);
-  if (tokens.length === 1) return true;
+  const allTokens = tokenize(prompt);
+  if (allTokens.length <= 1) return true;
+  const tokens = allTokens.filter((t) => !STOPWORDS.has(t) && t.length > 2);
+  if (tokens.length === 0) return true;
   const letterRatio = (prompt.replace(/[^a-zA-Z]/g, '').length) / Math.max(prompt.length, 1);
   if (letterRatio < 0.3) return true;
   return false;
 }
 
-function checkSpecificity(prompt: string, line2: string): boolean {
+export function checkSpecificity(prompt: string, line2: string): boolean {
   if (isOffTopic(prompt)) return true;
 
   const promptTokens = tokenize(prompt);
@@ -49,35 +74,11 @@ function checkSpecificity(prompt: string, line2: string): boolean {
   if (contentWords.length === 0) return true;
 
   const directOverlap = contentWords.some(
-    (w) => line2Tokens.includes(w) || line2Tokens.includes(stem(w))
+    (w) => line2Tokens.includes(w) || line2Tokens.includes(stem(w)) ||
+           line2Tokens.some((lt) => stem(lt) === stem(w))
   );
+
   if (directOverlap) return true;
 
-  if (checkSynonymMap(contentWords, line2Tokens)) return true;
-
-  return false;
-}
-
-export function validateFormat(output: unknown): { valid: true; data: GenerationOutput } | { valid: false; reason: string } {
-  const result = GenerationSchema.safeParse(output);
-  if (!result.success) {
-    return { valid: false, reason: 'format' };
-  }
-  return { valid: true, data: result.data };
-}
-
-export async function validateGeneration(
-  output: GenerationOutput,
-  prompt: string,
-): Promise<{ valid: boolean; reason?: string }> {
-  if (!checkSpecificity(prompt, output.line2)) {
-    return { valid: false, reason: 'specificity' };
-  }
-
-  const toneOk = await checkTone(getAnthropicClient(), prompt, output.line2);
-  if (!toneOk) {
-    return { valid: false, reason: 'tone' };
-  }
-
-  return { valid: true };
+  return checkSynonymMap(contentWords, line2Tokens);
 }
