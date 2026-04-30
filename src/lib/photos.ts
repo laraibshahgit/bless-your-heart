@@ -5,7 +5,8 @@ const photos = photosData as Photo[];
 
 export function getPhotoUrl(photoId: string): string {
   const base = import.meta.env.VITE_FIREBASE_STORAGE_BASE_URL ?? '';
-  return `${base}/photos/${photoId}.jpg`;
+  const path = encodeURIComponent(`photos/${photoId}.jpg`);
+  return `${base}/${path}?alt=media`;
 }
 
 export function getPhotoById(photoId: string): Photo | undefined {
