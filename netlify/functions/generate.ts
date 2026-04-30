@@ -1,150 +1,177 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
 import { z } from 'zod';
-import { hashIp, checkAndIncrementRateLimit } from '../../src/server/rateLimit';
+import { getAnthropicClient, generateLines, checkTone } from '../../src/server/anthropic';
+import { hashIp, getClientIp, checkAndIncrementRateLimit } from '../../src/server/rateLimit';
 import { checkSlurFilter, checkRealPersonFilter, checkDistressPhraseList, checkDistressWithHaiku } from '../../src/server/safety';
-import { getAnthropicClient, generateLines } from '../../src/server/anthropic';
-import { validateFormat, validateGeneration } from '../../src/server/validation';
+import { parseGenerationOutput, checkSpecificity } from '../../src/server/validation';
 import { selectPhoto } from '../../src/server/photoSelection';
 import { getHotlineForCountry } from '../../src/server/hotlines';
 import { safeFallbacks } from '../../src/server/fallbacks';
-import { errorCopy } from '../../src/content/copy';
+import photos from '../../src/data/photos.json';
+import type { Photo, GenerateResponse } from '../../src/types';
 
 const RequestSchema = z.object({
   prompt: z.string().trim().min(1).max(200),
   excludePhotoIds: z.array(z.string()).default([]),
 });
 
-const MAX_RETRIES = 2;
+const typedPhotos = photos as Photo[];
+const anthropic = getAnthropicClient();
 
-function resolveIp(event: HandlerEvent): string {
-  return (
-    event.headers['x-nf-client-connection-ip'] ||
-    event.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-    'unknown'
-  );
+const headers = {
+  'Content-Type': 'application/json; charset=utf-8',
+  'Cache-Control': 'no-store',
+};
+
+function jsonResponse(body: GenerateResponse, statusCode = 200) {
+  return { statusCode, headers, body: JSON.stringify(body) };
 }
 
-function json(body: unknown, statusCode = 200) {
-  return {
-    statusCode,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    },
-    body: JSON.stringify(body),
-  };
+function normalizePrompt(raw: string): string {
+  return raw.trim().replace(/\n/g, ' ').replace(/\s{2,}/g, ' ');
 }
 
-export const handler: Handler = async (event) => {
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers: { 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type' }, body: '' };
-  }
-
+const handler: Handler = async (event: HandlerEvent) => {
   if (event.httpMethod !== 'POST') {
-    return json({ status: 'error', message: 'Method not allowed', retryable: false }, 405);
+    return { statusCode: 405, body: 'Method not allowed' };
   }
 
   let parsed;
   try {
-    parsed = RequestSchema.parse(JSON.parse(event.body || '{}'));
+    parsed = RequestSchema.parse(JSON.parse(event.body ?? '{}'));
   } catch {
-    return json({ status: 'error', message: 'Invalid request', retryable: false }, 400);
+    return jsonResponse(
+      { status: 'error', message: 'Invalid request.', retryable: false },
+      400
+    );
   }
 
-  const { prompt, excludePhotoIds } = parsed;
-  const rawIp = resolveIp(event);
+  const prompt = normalizePrompt(parsed.prompt);
+  const { excludePhotoIds } = parsed;
+
+  const rawIp = getClientIp(event.headers);
   const hashedIp = hashIp(rawIp);
 
-  // 1. Rate limit
-  const rateResult = await checkAndIncrementRateLimit(hashedIp);
-  if (!rateResult.allowed) {
-    console.log(JSON.stringify({ event: 'gen_rate_limited', hashedIp }));
-    return json({ status: 'rate_limited', message: errorCopy.rateLimit });
+  if (process.env.NODE_ENV === 'production' || process.env.RATE_LIMIT_PER_HOUR !== '9999') {
+    try {
+      const rateResult = await checkAndIncrementRateLimit(hashedIp);
+      if (!rateResult.allowed) {
+        console.log(JSON.stringify({ event: 'gen_rate_limited', hashedIp }));
+        return jsonResponse({
+          status: 'rate_limited',
+          message: 'Even the universe has a daily limit. Try again in a bit.',
+        });
+      }
+    } catch (err) {
+      console.error(JSON.stringify({ event: 'rate_limit_check_failed', error: String(err) }));
+    }
   }
 
-  // 2. Slur filter
   if (checkSlurFilter(prompt)) {
     console.log(JSON.stringify({ event: 'gen_block', reason: 'slur' }));
-    return json({ status: 'blocked', message: errorCopy.slurBlock });
+    return jsonResponse({ status: 'blocked', message: "Let's try a different one." });
   }
 
-  // 3. Real-person filter
   if (checkRealPersonFilter(prompt)) {
     console.log(JSON.stringify({ event: 'gen_block', reason: 'real-person' }));
-    return json({ status: 'blocked', message: errorCopy.realPersonBlock });
+    return jsonResponse({
+      status: 'blocked',
+      message: "The voice doesn't punch at people. Try a situation instead.",
+    });
   }
 
-  // 4. Distress check (phrase list first, then Haiku)
-  const client = getAnthropicClient();
-  const isDistress = checkDistressPhraseList(prompt) || await checkDistressWithHaiku(client, prompt);
-  if (isDistress) {
+  const distressPhrase = checkDistressPhraseList(prompt);
+  const distressHaiku = distressPhrase ? true : await checkDistressWithHaiku(anthropic, prompt);
+
+  if (distressPhrase || distressHaiku) {
     console.log(JSON.stringify({ event: 'gen_distress' }));
-    const country = (event.headers['x-country'] || '').toUpperCase() || 'XX';
-    const hotline = getHotlineForCountry(country);
-    return json({ status: 'distress', hotline });
+    const country = (event.headers['x-country'] ?? '').toUpperCase();
+    return jsonResponse({
+      status: 'distress',
+      hotline: getHotlineForCountry(country),
+    });
   }
 
-  // 5. Generation loop with retries
+  const MAX_RETRIES = 2;
+  let lastOutput = null;
   let retries = 0;
-  while (retries <= MAX_RETRIES) {
-    try {
-      const raw = await generateLines(client, prompt);
-      const output = JSON.parse(
-        raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()
-      );
 
-      const formatResult = validateFormat(output);
-      if (!formatResult.valid) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const raw = await generateLines(anthropic, prompt);
+      const output = parseGenerationOutput(raw);
+
+      if (!output) {
         console.log(JSON.stringify({ event: 'gen_retry', reason: 'format' }));
         retries++;
         continue;
       }
 
-      const validResult = await validateGeneration(formatResult.data, prompt);
-      if (!validResult.valid) {
-        console.log(JSON.stringify({ event: 'gen_retry', reason: validResult.reason }));
+      if (!checkSpecificity(prompt, output.line2)) {
+        console.log(JSON.stringify({ event: 'gen_retry', reason: 'specificity' }));
         retries++;
         continue;
       }
 
-      const { line1, line2 } = formatResult.data;
-
-      // 6. Photo selection
-      const photoResult = selectPhoto(line1, line2, excludePhotoIds);
-      if (!photoResult) {
-        console.log(JSON.stringify({ event: 'gen_safe_fallback' }));
-        const fb = safeFallbacks[Math.floor(Math.random() * safeFallbacks.length)];
-        return json({ status: 'safe_fallback', line1: fb.line1, line2: fb.line2, photoId: fb.photoId });
-      }
-
-      console.log(JSON.stringify({ event: 'gen_ok', fittingRung: photoResult.fittingRung, retries, model: process.env.ANTHROPIC_MODEL_GEN }));
-      return json({
-        status: 'ok',
-        line1,
-        line2,
-        photoId: photoResult.photoId,
-        fittingRung: photoResult.fittingRung,
-      });
-    } catch (err: unknown) {
-      const status = (err as { status?: number })?.status;
-      if (status === 429 && retries < MAX_RETRIES) {
-        await new Promise((r) => setTimeout(r, 250 * (retries + 1)));
-        retries++;
-        continue;
-      }
-      if (status && status >= 500 && retries < MAX_RETRIES) {
-        await new Promise((r) => setTimeout(r, 250 * (retries + 1)));
+      const tonePassed = await checkTone(anthropic, prompt, output.line2);
+      if (!tonePassed) {
+        console.log(JSON.stringify({ event: 'gen_retry', reason: 'tone' }));
         retries++;
         continue;
       }
 
-      console.error(JSON.stringify({ event: 'gen_anthropic_error', status }));
+      lastOutput = output;
+      break;
+    } catch (err) {
+      console.error(JSON.stringify({ event: 'gen_anthropic_error', error: String(err) }));
       retries++;
     }
   }
 
-  // All retries exhausted — safe fallback
-  console.log(JSON.stringify({ event: 'gen_safe_fallback' }));
-  const fb = safeFallbacks[Math.floor(Math.random() * safeFallbacks.length)];
-  return json({ status: 'safe_fallback', line1: fb.line1, line2: fb.line2, photoId: fb.photoId });
+  if (!lastOutput) {
+    console.log(JSON.stringify({ event: 'gen_safe_fallback' }));
+    const fallback = safeFallbacks[Math.floor(Math.random() * safeFallbacks.length)];
+    return jsonResponse({
+      status: 'safe_fallback',
+      line1: fallback.line1,
+      line2: fallback.line2,
+      photoId: fallback.photoId,
+    });
+  }
+
+  const photoResult = selectPhoto(
+    typedPhotos,
+    lastOutput.line1.length,
+    lastOutput.line2.length,
+    excludePhotoIds
+  );
+
+  if (!photoResult) {
+    console.log(JSON.stringify({ event: 'gen_safe_fallback' }));
+    const fallback = safeFallbacks[Math.floor(Math.random() * safeFallbacks.length)];
+    return jsonResponse({
+      status: 'safe_fallback',
+      line1: fallback.line1,
+      line2: fallback.line2,
+      photoId: fallback.photoId,
+    });
+  }
+
+  const fittingRung = photoResult.rung === 3 ? 3 : photoResult.rung;
+  console.log(JSON.stringify({
+    event: 'gen_ok',
+    fittingRung,
+    retries,
+    model: process.env.ANTHROPIC_MODEL_GEN,
+  }));
+
+  return jsonResponse({
+    status: 'ok',
+    line1: lastOutput.line1,
+    line2: lastOutput.line2,
+    photoId: photoResult.photoId,
+    fittingRung: fittingRung as 1 | 2 | 3 | 4,
+  });
 };
+
+export { handler };
