@@ -1,7 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
-import { composite, setupCanvas, checkFit } from '@/lib/compositor';
+import { composite, setupCanvas, checkFit, loadImage } from '@/lib/compositor';
 import { getPhotoUrl, getPhotoById } from '@/lib/photos';
-import { loadImage } from '@/lib/photos';
 import { ensureFontsReady } from '@/lib/fonts';
 
 interface PosterCanvasProps {
@@ -42,7 +41,7 @@ export function PosterCanvas({ line1, line2, photoId, onFitFailure, onReady }: P
       const img = await loadImage(getPhotoUrl(photoId));
       if (cancelled) return;
 
-      const fit = checkFit(line1, line2, photo);
+      const fit = await checkFit(line1, line2, photo);
       if (!fit.ok) {
         onFitFailure?.();
         return;
