@@ -14,7 +14,6 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "@fontsource/cormorant-garamond": "^5.2.11",
     "@hookform/resolvers": "^5.2.2",
@@ -41,7 +40,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "autoprefixer": "^10.5.0",
-    "eslint": "^10.2.1",
+
     "firebase-admin": "^13.8.0",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.13",
