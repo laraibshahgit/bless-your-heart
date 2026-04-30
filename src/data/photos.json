@@ -1,0 +1,112 @@
+[
+  {
+    "id": "misty-fjord-01",
+    "width": 1080,
+    "height": 1080,
+    "textZone": { "x": 0.10, "y": 0.55, "width": 0.80, "height": 0.30 },
+    "capacity": { "line1": 62, "line2": 105 },
+    "textColor": "white",
+    "watermarkPosition": "lower-right",
+    "tier": "high-capacity",
+    "credit": "Placeholder / Unsplash"
+  },
+  {
+    "id": "sunrise-meadow-02",
+    "width": 1080,
+    "height": 1080,
+    "textZone": { "x": 0.10, "y": 0.10, "width": 0.80, "height": 0.30 },
+    "capacity": { "line1": 62, "line2": 105 },
+    "textColor": "white",
+    "watermarkPosition": "lower-left",
+    "tier": "high-capacity",
+    "credit": "Placeholder / Unsplash"
+  },
+  {
+    "id": "quiet-woods-03",
+    "width": 1080,
+    "height": 1080,
+    "textZone": { "x": 0.10, "y": 0.55, "width": 0.80, "height": 0.30 },
+    "capacity": { "line1": 48, "line2": 88 },
+    "textColor": "white",
+    "watermarkPosition": "lower-right",
+    "tier": "standard",
+    "credit": "Placeholder / Unsplash"
+  },
+  {
+    "id": "foggy-coastline-04",
+    "width": 1080,
+    "height": 1080,
+    "textZone": { "x": 0.10, "y": 0.35, "width": 0.80, "height": 0.30 },
+    "capacity": { "line1": 62, "line2": 105 },
+    "textColor": "white",
+    "watermarkPosition": "upper-right",
+    "tier": "high-capacity",
+    "credit": "Placeholder / Unsplash"
+  },
+  {
+    "id": "golden-field-05",
+    "width": 1080,
+    "height": 1080,
+    "textZone": { "x": 0.10, "y": 0.55, "width": 0.80, "height": 0.30 },
+    "capacity": { "line1": 62, "line2": 105 },
+    "textColor": "dark",
+    "watermarkPosition": "lower-left",
+    "tier": "high-capacity",
+    "credit": "Placeholder / Unsplash"
+  },
+  {
+    "id": "mountain-lake-06",
+    "width": 1080,
+    "height": 1080,
+    "textZone": { "x": 0.10, "y": 0.10, "width": 0.80, "height": 0.30 },
+    "capacity": { "line1": 62, "line2": 105 },
+    "textColor": "white",
+    "watermarkPosition": "lower-right",
+    "tier": "high-capacity",
+    "credit": "Placeholder / Unsplash"
+  },
+  {
+    "id": "lavender-dawn-07",
+    "width": 1080,
+    "height": 1080,
+    "textZone": { "x": 0.10, "y": 0.55, "width": 0.80, "height": 0.30 },
+    "capacity": { "line1": 62, "line2": 105 },
+    "textColor": "white",
+    "watermarkPosition": "lower-right",
+    "tier": "high-capacity",
+    "credit": "Placeholder / Unsplash"
+  },
+  {
+    "id": "winter-pines-08",
+    "width": 1080,
+    "height": 1080,
+    "textZone": { "x": 0.10, "y": 0.55, "width": 0.80, "height": 0.30 },
+    "capacity": { "line1": 62, "line2": 105 },
+    "textColor": "white",
+    "watermarkPosition": "lower-left",
+    "tier": "high-capacity",
+    "credit": "Placeholder / Unsplash"
+  },
+  {
+    "id": "rolling-hills-09",
+    "width": 1080,
+    "height": 1080,
+    "textZone": { "x": 0.10, "y": 0.10, "width": 0.80, "height": 0.30 },
+    "capacity": { "line1": 45, "line2": 82 },
+    "textColor": "white",
+    "watermarkPosition": "lower-right",
+    "tier": "standard",
+    "credit": "Placeholder / Unsplash"
+  },
+  {
+    "id": "calm-shore-10",
+    "width": 1080,
+    "height": 1080,
+    "textZone": { "x": 0.10, "y": 0.55, "width": 0.80, "height": 0.30 },
+    "capacity": { "line1": 42, "line2": 78 },
+    "textColor": "white",
+    "watermarkPosition": "lower-right",
+    "tier": "standard",
+    "credit": "Placeholder / Unsplash"
+  }
+]

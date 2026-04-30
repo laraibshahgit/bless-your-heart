@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 .netlify/
+tsconfig.tsbuildinfo
 
 # Environment
 .env

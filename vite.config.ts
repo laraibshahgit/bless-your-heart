@@ -17,4 +17,9 @@ export default defineConfig({
   build: {
     sourcemap: false,
   },
+  test: {
+    globals: true,
+    environment: 'node',
+    include: ['tests/**/*.test.ts'],
+  },
 });
