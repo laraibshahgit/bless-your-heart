@@ -1,32 +1,21 @@
-import { initializeApp, cert, getApps, type App } from 'firebase-admin/app';
-import { getFirestore as getFs, type Firestore } from 'firebase-admin/firestore';
-import { getStorage as getStore, type Storage } from 'firebase-admin/storage';
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
-let app: App | undefined;
+function initFirebase() {
+  if (getApps().length > 0) return;
 
-function getApp(): App {
-  if (app) return app;
-  if (getApps().length > 0) {
-    app = getApps()[0];
-    return app;
-  }
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
-  app = initializeApp({
+  initializeApp({
     credential: cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      privateKey,
     }),
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
   });
-
-  return app;
 }
 
-export function getFirestore(): Firestore {
-  return getFs(getApp());
-}
+initFirebase();
 
-export function getStorage(): Storage {
-  return getStore(getApp());
-}
+export const db = getFirestore();
