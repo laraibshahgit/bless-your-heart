@@ -1,8 +1,8 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
 import { z } from 'zod';
 import { hashIp, checkAndIncrementRateLimit } from '../../src/server/rateLimit';
-import { checkSlurFilter, checkRealPersonFilter, checkDistress } from '../../src/server/safety';
-import { getAnthropicClient, generatePoster } from '../../src/server/anthropic';
+import { checkSlurFilter, checkRealPersonFilter, checkDistressPhraseList, checkDistressWithHaiku } from '../../src/server/safety';
+import { getAnthropicClient, generateLines } from '../../src/server/anthropic';
 import { validateFormat, validateGeneration } from '../../src/server/validation';
 import { selectPhoto } from '../../src/server/photoSelection';
 import { getHotlineForCountry } from '../../src/server/hotlines';
@@ -69,16 +69,14 @@ export const handler: Handler = async (event) => {
   }
 
   // 3. Real-person filter
-  const personCheck = checkRealPersonFilter(prompt);
-  if (personCheck.blocked) {
+  if (checkRealPersonFilter(prompt)) {
     console.log(JSON.stringify({ event: 'gen_block', reason: 'real-person' }));
-    return json({ status: 'blocked', message: personCheck.message });
+    return json({ status: 'blocked', message: errorCopy.realPersonBlock });
   }
 
-  // 4. Distress check
+  // 4. Distress check (phrase list first, then Haiku)
   const client = getAnthropicClient();
-  const safetyModel = process.env.ANTHROPIC_MODEL_SAFETY || 'claude-haiku-4-5';
-  const isDistress = await checkDistress(prompt, client, safetyModel);
+  const isDistress = checkDistressPhraseList(prompt) || await checkDistressWithHaiku(client, prompt);
   if (isDistress) {
     console.log(JSON.stringify({ event: 'gen_distress' }));
     const country = (event.headers['x-country'] || '').toUpperCase() || 'XX';
@@ -90,7 +88,10 @@ export const handler: Handler = async (event) => {
   let retries = 0;
   while (retries <= MAX_RETRIES) {
     try {
-      const output = await generatePoster(prompt);
+      const raw = await generateLines(client, prompt);
+      const output = JSON.parse(
+        raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()
+      );
 
       const formatResult = validateFormat(output);
       if (!formatResult.valid) {

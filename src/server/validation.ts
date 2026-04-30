@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { checkSynonymMap } from './synonyms';
-import { checkTone } from './anthropic';
+import { checkTone, getAnthropicClient } from './anthropic';
 import type { GenerationOutput } from '@/types';
 
 const GenerationSchema = z.object({
@@ -74,7 +74,7 @@ export async function validateGeneration(
     return { valid: false, reason: 'specificity' };
   }
 
-  const toneOk = await checkTone(prompt, output.line2);
+  const toneOk = await checkTone(getAnthropicClient(), prompt, output.line2);
   if (!toneOk) {
     return { valid: false, reason: 'tone' };
   }

@@ -1,7 +1,15 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { GenerationOutput } from '@/types';
 
-const VOICE_SYSTEM_PROMPT = `You are the voice behind Bless Your Heart, a poster generator that produces two-line anti-affirmations. Your output runs on a scenic landscape photo styled like a Pinterest wellness poster.
+let client: Anthropic | null = null;
+
+export function getAnthropicClient(): Anthropic {
+  if (!client) {
+    client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return client;
+}
+
+export const VOICE_SYSTEM_PROMPT = `You are the voice behind Bless Your Heart, a poster generator that produces two-line anti-affirmations. Your output runs on a scenic landscape photo styled like a Pinterest wellness poster.
 
 OUTPUT CONTRACT
 You produce exactly two lines:
@@ -33,6 +41,9 @@ Examples:
 - "asdf"
   Line 1: Some moments arrive without language.
   Line 2: Even the keyboard has given up.
+- "explain quantum physics"
+  Line 1: The universe holds mysteries beyond our grasp.
+  Line 2: Superposition will not help with the laundry.
 
 OUTPUT FORMAT
 
@@ -44,6 +55,24 @@ Return ONLY a JSON object. No prose, no preamble, no code fences.
 }
 
 Do not include any other fields. Do not explain your reasoning. Do not apologize. Do not warn about content. Just the object.`;
+
+export async function generateLines(
+  anthropic: Anthropic,
+  prompt: string
+): Promise<string> {
+  const response = await anthropic.messages.create({
+    model: process.env.ANTHROPIC_MODEL_GEN ?? 'claude-sonnet-4-6',
+    max_tokens: 200,
+    temperature: 0.9,
+    system: VOICE_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  return response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+}
 
 const TONE_CHECK_PROMPT = `You evaluate whether a line of text punches at the person who asked, or punches at the situation/universal pattern/absurdity.
 
@@ -63,66 +92,32 @@ PUNCHES AT SITUATION (return "safe"):
 
 Return EXACTLY one word: "safe" or "user". Nothing else.`;
 
-let client: Anthropic | null = null;
-
-export function getAnthropicClient(): Anthropic {
-  if (!client) {
-    client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
-  return client;
-}
-
-export async function generatePoster(prompt: string): Promise<GenerationOutput> {
-  const anthropic = getAnthropicClient();
-  const model = process.env.ANTHROPIC_MODEL_GEN || 'claude-sonnet-4-6';
-
-  const response = await anthropic.messages.create({
-    model,
-    max_tokens: 200,
-    temperature: 0.9,
-    system: VOICE_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-
-  const cleaned = text
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
-
-  const parsed = JSON.parse(cleaned);
-  return { line1: parsed.line1, line2: parsed.line2 };
-}
-
 export async function checkTone(
+  anthropic: Anthropic,
   prompt: string,
   line2: string
 ): Promise<boolean> {
-  const anthropic = getAnthropicClient();
-  const model = process.env.ANTHROPIC_MODEL_SAFETY || 'claude-haiku-4-5';
+  if (process.env.ENABLE_TONE_CHECK === 'false') return true;
 
-  const response = await anthropic.messages.create({
-    model,
-    max_tokens: 10,
-    temperature: 0,
-    system: TONE_CHECK_PROMPT,
-    messages: [{
-      role: 'user',
-      content: `User input: "${prompt}"\nGenerated line 2: "${line2}"`,
-    }],
-  });
+  try {
+    const response = await anthropic.messages.create({
+      model: process.env.ANTHROPIC_MODEL_SAFETY ?? 'claude-haiku-4-5',
+      max_tokens: 10,
+      temperature: 0,
+      system: TONE_CHECK_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `User input: "${prompt}"\nGenerated line 2: "${line2}"`,
+      }],
+    });
 
-  const verdict = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('')
-    .trim()
-    .toLowerCase();
+    const verdict = response.content[0].type === 'text'
+      ? response.content[0].text.trim().toLowerCase()
+      : 'safe';
 
-  return verdict.startsWith('safe');
+    return verdict.startsWith('safe');
+  } catch {
+    console.error(JSON.stringify({ event: 'tone_check_failed' }));
+    return true;
+  }
 }
