@@ -1,5 +1,7 @@
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+
+let _db: Firestore | null = null;
 
 function initFirebase() {
   if (getApps().length > 0) return;
@@ -16,6 +18,10 @@ function initFirebase() {
   });
 }
 
-initFirebase();
-
-export const db = getFirestore();
+export function getDb(): Firestore {
+  if (!_db) {
+    initFirebase();
+    _db = getFirestore();
+  }
+  return _db;
+}

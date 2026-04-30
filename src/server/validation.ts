@@ -46,11 +46,18 @@ function tokenize(text: string): string[] {
 }
 
 function stem(word: string): string {
-  return word
-    .replace(/ing$/, '')
-    .replace(/ed$/, '')
-    .replace(/ly$/, '')
-    .replace(/s$/, '');
+  let prev = word;
+  for (let i = 0; i < 3; i++) {
+    const next = prev
+      .replace(/ies$/, 'y')
+      .replace(/ing$/, '')
+      .replace(/ed$/, '')
+      .replace(/ly$/, '')
+      .replace(/s$/, '');
+    if (next === prev) break;
+    prev = next;
+  }
+  return prev;
 }
 
 function isOffTopic(prompt: string): boolean {

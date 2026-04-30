@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { db } from './firebaseAdmin';
+import { getDb } from './firebaseAdmin';
 import { Timestamp } from 'firebase-admin/firestore';
 import type { RateLimitResult } from '@/types';
 
@@ -24,6 +24,7 @@ export function getClientIp(headers: Record<string, string | undefined>): string
 
 export async function checkAndIncrementRateLimit(hashedIp: string): Promise<RateLimitResult> {
   const limit = parseInt(process.env.RATE_LIMIT_PER_HOUR ?? '25', 10);
+  const db = getDb();
   const docRef = db.collection(COLLECTION).doc(hashedIp);
 
   return db.runTransaction(async (tx) => {

@@ -1,7 +1,7 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
 import { z } from 'zod';
 import { getAnthropicClient, generateLines, checkTone } from '../../src/server/anthropic';
-import { hashIp, getClientIp, checkAndIncrementRateLimit } from '../../src/server/rateLimit';
+import { hashIp, getClientIp } from '../../src/server/rateLimit';
 import { checkSlurFilter, checkRealPersonFilter, checkDistressPhraseList, checkDistressWithHaiku } from '../../src/server/safety';
 import { parseGenerationOutput, checkSpecificity } from '../../src/server/validation';
 import { selectPhoto } from '../../src/server/photoSelection';
@@ -52,9 +52,13 @@ const handler: Handler = async (event: HandlerEvent) => {
   const rawIp = getClientIp(event.headers);
   const hashedIp = hashIp(rawIp);
 
-  if (process.env.NODE_ENV === 'production' || process.env.RATE_LIMIT_PER_HOUR !== '9999') {
+  if (process.env.RATE_LIMIT_PER_HOUR !== '9999') {
     try {
-      const rateResult = await checkAndIncrementRateLimit(hashedIp);
+      const { checkAndIncrementRateLimit } = await import('../../src/server/rateLimit');
+      const rateResult = await Promise.race([
+        checkAndIncrementRateLimit(hashedIp),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('rate limit timeout')), 3000)),
+      ]);
       if (!rateResult.allowed) {
         console.log(JSON.stringify({ event: 'gen_rate_limited', hashedIp }));
         return jsonResponse({
