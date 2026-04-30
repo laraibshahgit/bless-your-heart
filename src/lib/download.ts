@@ -5,6 +5,7 @@ function shortId(): string {
 }
 
 export function isIOSSafari(): boolean {
+  if (typeof navigator === 'undefined') return false;
   return (
     /iP(ad|hone|od)/.test(navigator.userAgent) &&
     /Safari/.test(navigator.userAgent) &&
