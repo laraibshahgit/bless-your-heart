@@ -92,10 +92,10 @@
     "width": 1080,
     "height": 1080,
     "textZone": { "x": 0.10, "y": 0.10, "width": 0.80, "height": 0.30 },
-    "capacity": { "line1": 45, "line2": 82 },
+    "capacity": { "line1": 62, "line2": 105 },
     "textColor": "white",
     "watermarkPosition": "lower-right",
-    "tier": "standard",
+    "tier": "high-capacity",
     "credit": "Placeholder / Unsplash"
   },
   {
