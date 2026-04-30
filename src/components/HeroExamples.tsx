@@ -14,11 +14,11 @@ export function HeroExamples() {
       <div className="hidden lg:grid grid-cols-3 gap-4">
         {EXAMPLES.map((src, i) => (
           <img
-            key={src}
+            key={i}
             src={src}
             alt=""
             loading="eager"
-            fetchPriority={i === 0 ? 'high' : undefined}
+            fetchPriority="high"
             className="w-full aspect-square rounded-xl object-cover"
           />
         ))}
