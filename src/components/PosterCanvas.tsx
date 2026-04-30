@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { composite, setupCanvas, checkFit, loadImage } from '@/lib/compositor';
+import { composite, loadImage, setupCanvas, checkFit } from '@/lib/compositor';
 import { getPhotoUrl, getPhotoById } from '@/lib/photos';
 import { ensureFontsReady } from '@/lib/fonts';
 
@@ -53,7 +53,7 @@ export function PosterCanvas({ line1, line2, photoId, onFitFailure, onReady }: P
     })();
 
     return () => { cancelled = true; };
-  }, [line1, line2, photoId, displaySize, onFitFailure, onReady]);
+  }, [line1, line2, photoId, displaySize]);
 
   return (
     <canvas

@@ -33,7 +33,7 @@ export function PosterReveal({ state, onRegenerate }: PosterRevealProps) {
       )}
 
       {state.phase === 'settled' && (
-        <div className="space-y-4">
+        <div className="space-y-4 animate-in fade-in duration-reveal">
           <PosterCanvas
             line1={state.line1}
             line2={state.line2}
