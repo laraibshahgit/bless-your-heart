@@ -1,9 +1,9 @@
-let fontsPromise: Promise<void> | null = null;
+let fontsReadyPromise: Promise<void> | null = null;
 
 export function ensureFontsReady(): Promise<void> {
-  if (fontsPromise) return fontsPromise;
+  if (fontsReadyPromise) return fontsReadyPromise;
 
-  fontsPromise = (async () => {
+  fontsReadyPromise = (async () => {
     await document.fonts.ready;
     await Promise.all([
       document.fonts.load('500 64px "Cormorant Garamond"'),
@@ -12,5 +12,5 @@ export function ensureFontsReady(): Promise<void> {
     ]);
   })();
 
-  return fontsPromise;
+  return fontsReadyPromise;
 }
