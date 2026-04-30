@@ -67,6 +67,7 @@ export default function App() {
     track('prompt_submitted', { source, length: prompt.length });
 
     const startedAt = performance.now();
+
     const result = await callGenerate(prompt.trim(), excludePhotoIds);
 
     if (result.status === 'distress') {
