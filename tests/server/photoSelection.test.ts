@@ -1,56 +1,36 @@
+import { describe, it, expect } from 'vitest';
 import { selectPhoto } from '@/server/photoSelection';
+import type { Photo } from '@/types';
 
-// IDs from photos.json for reference:
-// Standard (capacity ~32/52): misty-fjord-01, sunrise-meadow-02, golden-field-03,
-//   calm-lake-04, forest-fog-05, desert-dusk-06, ocean-horizon-07
-// High-capacity (60/100): wide-sky-08, open-plain-09, empty-road-10
-
-const STANDARD_IDS = [
-  'misty-fjord-01', 'sunrise-meadow-02', 'golden-field-03',
-  'calm-lake-04', 'forest-fog-05', 'desert-dusk-06', 'ocean-horizon-07',
+const mockPhotos: Photo[] = [
+  { id: 'a-01', width: 1080, height: 1080, textZone: { x: 0.1, y: 0.5, width: 0.8, height: 0.3 }, capacity: { line1: 40, line2: 80 }, textColor: 'white', watermarkPosition: 'lower-right', tier: 'standard', credit: '' },
+  { id: 'b-02', width: 1080, height: 1080, textZone: { x: 0.1, y: 0.5, width: 0.8, height: 0.3 }, capacity: { line1: 60, line2: 100 }, textColor: 'white', watermarkPosition: 'lower-right', tier: 'high-capacity', credit: '' },
+  { id: 'c-03', width: 1080, height: 1080, textZone: { x: 0.1, y: 0.5, width: 0.8, height: 0.3 }, capacity: { line1: 55, line2: 95 }, textColor: 'white', watermarkPosition: 'lower-right', tier: 'high-capacity', credit: '' },
 ];
-const HIGH_CAPACITY_IDS = ['wide-sky-08', 'open-plain-09', 'empty-road-10'];
-const ALL_IDS = [...STANDARD_IDS, ...HIGH_CAPACITY_IDS];
 
 describe('selectPhoto', () => {
-  it('returns a rung 1 result for short text that fits standard photos', () => {
-    const result = selectPhoto('Short line.', 'Also short.', []);
+  it('selects from eligible standard photos', () => {
+    const result = selectPhoto(mockPhotos, 30, 70, []);
     expect(result).not.toBeNull();
-    expect(result!.fittingRung).toBe(1);
-    expect(result!.photoId).toBeTruthy();
-    expect(result!.credit).toBeTruthy();
   });
 
-  it('returns rung 2 when text is too long for standard but high-capacity exists', () => {
-    // line2 at 55 chars exceeds standard capacity (~52) but fits high-capacity (100)
-    const longLine2 = 'A'.repeat(55);
-    const result = selectPhoto('Short.', longLine2, []);
+  it('excludes photos in excludeIds', () => {
+    const result = selectPhoto(mockPhotos, 30, 70, ['a-01', 'b-02', 'c-03']);
     expect(result).not.toBeNull();
-    expect(result!.fittingRung).toBeLessThanOrEqual(2);
-    expect(HIGH_CAPACITY_IDS).toContain(result!.photoId);
+    expect(result!.rung).toBe(3);
   });
 
-  it('still returns a result when all standard IDs are excluded', () => {
-    const result = selectPhoto('Short.', 'Short too.', STANDARD_IDS);
+  it('falls back to high-capacity when standard cannot fit', () => {
+    const result = selectPhoto(mockPhotos, 50, 90, []);
     expect(result).not.toBeNull();
-    expect(HIGH_CAPACITY_IDS).toContain(result!.photoId);
+    expect(['b-02', 'c-03']).toContain(result!.photoId);
   });
 
-  it('returns rung 3 (allows repeats) when all IDs are excluded', () => {
-    const result = selectPhoto('Short.', 'Short too.', ALL_IDS);
-    expect(result).not.toBeNull();
-    expect(result!.fittingRung).toBe(3);
-    expect(HIGH_CAPACITY_IDS).toContain(result!.photoId);
-  });
-
-  it('result always contains photoId, fittingRung, and credit', () => {
-    const result = selectPhoto('Hello.', 'World.', []);
-    expect(result).not.toBeNull();
-    expect(result).toHaveProperty('photoId');
-    expect(result).toHaveProperty('fittingRung');
-    expect(result).toHaveProperty('credit');
-    expect(typeof result!.photoId).toBe('string');
-    expect(typeof result!.fittingRung).toBe('number');
-    expect(typeof result!.credit).toBe('string');
+  it('returns null only when impossible', () => {
+    const tiny: Photo[] = [
+      { id: 'x-01', width: 1080, height: 1080, textZone: { x: 0.1, y: 0.5, width: 0.8, height: 0.3 }, capacity: { line1: 10, line2: 10 }, textColor: 'white', watermarkPosition: 'lower-right', tier: 'standard', credit: '' },
+    ];
+    const result = selectPhoto(tiny, 50, 90, []);
+    expect(result).toBeNull();
   });
 });

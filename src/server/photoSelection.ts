@@ -1,48 +1,42 @@
-import photosData from '@/data/photos.json';
 import type { Photo } from '@/types';
-
-const photos: Photo[] = photosData as Photo[];
 
 interface PhotoSelectionResult {
   photoId: string;
-  fittingRung: 1 | 2 | 3 | 4;
-  credit: string;
+  rung: 1 | 2 | 3;
 }
 
 export function selectPhoto(
-  line1: string,
-  line2: string,
-  excludePhotoIds: string[]
+  photos: Photo[],
+  line1Length: number,
+  line2Length: number,
+  excludeIds: string[]
 ): PhotoSelectionResult | null {
-  const line1Len = line1.length;
-  const line2Len = line2.length;
-
-  let candidates = photos.filter(
+  const eligible = photos.filter(
     (p) =>
-      p.capacity.line1 >= line1Len &&
-      p.capacity.line2 >= line2Len &&
-      !excludePhotoIds.includes(p.id)
+      p.capacity.line1 >= line1Length &&
+      p.capacity.line2 >= line2Length &&
+      !excludeIds.includes(p.id)
   );
 
-  if (candidates.length > 0) {
-    const selected = candidates[Math.floor(Math.random() * candidates.length)];
-    return { photoId: selected.id, fittingRung: 1, credit: selected.credit };
+  if (eligible.length > 0) {
+    const pick = eligible[Math.floor(Math.random() * eligible.length)];
+    return { photoId: pick.id, rung: 1 };
   }
 
-  candidates = photos.filter(
-    (p) => p.tier === 'high-capacity' && !excludePhotoIds.includes(p.id)
+  const highCap = photos.filter(
+    (p) => p.tier === 'high-capacity' && !excludeIds.includes(p.id)
   );
 
-  if (candidates.length > 0) {
-    const selected = candidates[Math.floor(Math.random() * candidates.length)];
-    return { photoId: selected.id, fittingRung: 2, credit: selected.credit };
+  if (highCap.length > 0) {
+    const pick = highCap[Math.floor(Math.random() * highCap.length)];
+    return { photoId: pick.id, rung: 2 };
   }
 
-  candidates = photos.filter((p) => p.tier === 'high-capacity');
+  const allHighCap = photos.filter((p) => p.tier === 'high-capacity');
 
-  if (candidates.length > 0) {
-    const selected = candidates[Math.floor(Math.random() * candidates.length)];
-    return { photoId: selected.id, fittingRung: 3, credit: selected.credit };
+  if (allHighCap.length > 0) {
+    const pick = allHighCap[Math.floor(Math.random() * allHighCap.length)];
+    return { photoId: pick.id, rung: 3 };
   }
 
   return null;
