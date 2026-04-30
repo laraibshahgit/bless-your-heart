@@ -12,7 +12,7 @@ const SESSION_KEY = 'byh:lastPrompt';
 export function PromptInput({ value, onChange, disabled }: PromptInputProps) {
   const [placeholder] = useState(() => placeholders[Math.floor(Math.random() * placeholders.length)]);
   const inputRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     const saved = sessionStorage.getItem(SESSION_KEY);
