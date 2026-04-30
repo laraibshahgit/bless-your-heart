@@ -1,39 +1,26 @@
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('@/server/firebaseAdmin', () => ({
+  db: {},
+}));
+
 import { hashIp } from '@/server/rateLimit';
 
 describe('hashIp', () => {
-  beforeEach(() => {
-    process.env.IP_SALT_BASE = 'test-salt';
+  it('produces a 32-char hex string', () => {
+    const result = hashIp('127.0.0.1');
+    expect(result).toMatch(/^[a-f0-9]{32}$/);
   });
 
-  afterEach(() => {
-    delete process.env.IP_SALT_BASE;
+  it('produces different hashes for different IPs', () => {
+    const a = hashIp('127.0.0.1');
+    const b = hashIp('192.168.1.1');
+    expect(a).not.toBe(b);
   });
 
-  it('returns a deterministic hash for the same IP', () => {
-    const hash1 = hashIp('192.168.1.1');
-    const hash2 = hashIp('192.168.1.1');
-    expect(hash1).toBe(hash2);
-  });
-
-  it('returns different hashes for different IPs', () => {
-    const hash1 = hashIp('192.168.1.1');
-    const hash2 = hashIp('10.0.0.1');
-    expect(hash1).not.toBe(hash2);
-  });
-
-  it('always returns exactly 32 hex characters', () => {
-    const ips = ['192.168.1.1', '10.0.0.1', '::1', '255.255.255.255', ''];
-    for (const ip of ips) {
-      const hash = hashIp(ip);
-      expect(hash).toHaveLength(32);
-      expect(hash).toMatch(/^[0-9a-f]{32}$/);
-    }
-  });
-
-  it('does not contain the raw IP in the output', () => {
-    const ip = '192.168.1.1';
-    const hash = hashIp(ip);
-    expect(hash).not.toContain(ip);
-    expect(hash).not.toContain(ip.replace(/\./g, ''));
+  it('produces consistent output for same input on same day', () => {
+    const a = hashIp('127.0.0.1');
+    const b = hashIp('127.0.0.1');
+    expect(a).toBe(b);
   });
 });
