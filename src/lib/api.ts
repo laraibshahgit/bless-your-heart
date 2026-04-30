@@ -1,4 +1,4 @@
-import type { GenerateResponse } from '@/types';
+import type { GenerateRequest, GenerateResponse } from '@/types';
 import { errorCopy } from '@/content/copy';
 
 export async function callGenerate(
@@ -9,7 +9,7 @@ export async function callGenerate(
     const response = await fetch('/.netlify/functions/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, excludePhotoIds }),
+      body: JSON.stringify({ prompt, excludePhotoIds } satisfies GenerateRequest),
     });
 
     if (!response.ok) {
@@ -19,7 +19,7 @@ export async function callGenerate(
       return { status: 'error', message: errorCopy.generation.unknown, retryable: true };
     }
 
-    return await response.json();
+    return (await response.json()) as GenerateResponse;
   } catch {
     if (!navigator.onLine) {
       return { status: 'error', message: errorCopy.generation.networkOffline, retryable: true };
