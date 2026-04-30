@@ -53,7 +53,7 @@ export function DownloadButton() {
       )}
 
       {status === 'confirmed' && (
-        <p className="mt-2 text-caption text-ink-soft italic">
+        <p className="mt-2 text-caption text-ink-soft italic animate-in fade-in duration-200">
           {downloadConfirmation}
         </p>
       )}
