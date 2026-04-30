@@ -11,7 +11,8 @@ const SESSION_KEY = 'byh:lastPrompt';
 
 export function PromptInput({ value, onChange, disabled }: PromptInputProps) {
   const [placeholder] = useState(() => placeholders[Math.floor(Math.random() * placeholders.length)]);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     const saved = sessionStorage.getItem(SESSION_KEY);
@@ -31,8 +32,9 @@ export function PromptInput({ value, onChange, disabled }: PromptInputProps) {
 
   return (
     <div className="relative w-full max-w-lg mx-auto">
-      <label htmlFor="prompt-input" className="sr-only">What&apos;s going on?</label>
+      <label htmlFor="prompt-input" className="sr-only">What's going on?</label>
       <input
+        ref={inputRef}
         id="prompt-input"
         type="text"
         value={value}
