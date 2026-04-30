@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-cream text-ink-deep font-serif antialiased;
+  }
+}
+
+@layer utilities {
+  .text-poster-light {
+    color: #ffffff;
+  }
+  .text-poster-dark {
+    color: #1a1612;
+  }
+}
