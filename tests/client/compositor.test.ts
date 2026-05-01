@@ -215,66 +215,26 @@ describe('composite', () => {
     expect(calls.restoreCount).toBe(1);
   });
 
-  it('positions lower-right watermark at the bottom-right corner', () => {
+  // Canvas is 1080x1080, watermark padding is 32. Each corner is one of the four
+  // (x, y) ∈ {32, 1048} pairs. Parameterized to keep the geometry table visible.
+  it.each([
+    { position: 'lower-right' as const, expectedX: 1048, expectedY: 1048 },
+    { position: 'lower-left' as const, expectedX: 32, expectedY: 1048 },
+    { position: 'upper-left' as const, expectedX: 32, expectedY: 32 },
+    { position: 'upper-right' as const, expectedX: 1048, expectedY: 32 },
+  ])('positions $position watermark at ($expectedX, $expectedY)', ({ position, expectedX, expectedY }) => {
     const { ctx, calls } = createMockContext();
     const canvas = makeCanvas(ctx);
     composite({
       canvas,
       img: {} as HTMLImageElement,
-      photo: makePhoto({ watermarkPosition: 'lower-right' }),
+      photo: makePhoto({ watermarkPosition: position }),
       line1: 'a',
       line2: 'b',
     });
     const watermark = calls.fillText[2];
-    // Lower-right: x = 1080 - 32 = 1048, y = 1080 - 32 = 1048
-    expect(watermark[1]).toBe(1048);
-    expect(watermark[2]).toBe(1048);
-  });
-
-  it('positions lower-left watermark at the bottom-left corner', () => {
-    const { ctx, calls } = createMockContext();
-    const canvas = makeCanvas(ctx);
-    composite({
-      canvas,
-      img: {} as HTMLImageElement,
-      photo: makePhoto({ watermarkPosition: 'lower-left' }),
-      line1: 'a',
-      line2: 'b',
-    });
-    const watermark = calls.fillText[2];
-    // Lower-left: x = 32 (padding), y = 1080 - 32 = 1048
-    expect(watermark[1]).toBe(32);
-    expect(watermark[2]).toBe(1048);
-  });
-
-  it('positions upper-left watermark at the top-left corner', () => {
-    const { ctx, calls } = createMockContext();
-    const canvas = makeCanvas(ctx);
-    composite({
-      canvas,
-      img: {} as HTMLImageElement,
-      photo: makePhoto({ watermarkPosition: 'upper-left' }),
-      line1: 'a',
-      line2: 'b',
-    });
-    const watermark = calls.fillText[2];
-    expect(watermark[1]).toBe(32);
-    expect(watermark[2]).toBe(32);
-  });
-
-  it('positions upper-right watermark at the top-right corner', () => {
-    const { ctx, calls } = createMockContext();
-    const canvas = makeCanvas(ctx);
-    composite({
-      canvas,
-      img: {} as HTMLImageElement,
-      photo: makePhoto({ watermarkPosition: 'upper-right' }),
-      line1: 'a',
-      line2: 'b',
-    });
-    const watermark = calls.fillText[2];
-    expect(watermark[1]).toBe(1048);
-    expect(watermark[2]).toBe(32);
+    expect(watermark[1]).toBe(expectedX);
+    expect(watermark[2]).toBe(expectedY);
   });
 
   it('respects scale parameter — line1 size = round(64 * scale)', () => {
