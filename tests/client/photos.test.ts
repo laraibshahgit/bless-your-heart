@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const ORIGINAL_BASE = (import.meta as any).env?.VITE_FIREBASE_STORAGE_BASE_URL;
-
+// Single afterEach handles both module reset and env restoration. The previous
+// version registered TWO file-level afterEach hooks — one early (unstub) and
+// one after the describes (restore original) — which made the order of cleanup
+// non-obvious and easy to break by reordering blocks.
 beforeEach(() => {
   vi.resetModules();
 });
@@ -75,9 +77,3 @@ describe('getAllCredits', () => {
   });
 });
 
-// Restore env after tests complete
-afterEach(() => {
-  if (ORIGINAL_BASE !== undefined) {
-    vi.stubEnv('VITE_FIREBASE_STORAGE_BASE_URL', ORIGINAL_BASE);
-  }
-});

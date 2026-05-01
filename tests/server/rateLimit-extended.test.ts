@@ -55,14 +55,20 @@ describe('hashIp (extended)', () => {
   });
 
   it('uses IP_SALT_BASE env var when set', () => {
+    // try/finally guarantees env restoration even if assertion throws — otherwise
+    // a failed expectation in this test would leak `IP_SALT_BASE='different-salt'`
+    // into every subsequent hashIp call in this file's worker.
     const original = process.env.IP_SALT_BASE;
-    process.env.IP_SALT_BASE = 'custom-salt';
-    const a = hashIp('1.2.3.4');
-    process.env.IP_SALT_BASE = 'different-salt';
-    const b = hashIp('1.2.3.4');
-    if (original === undefined) delete process.env.IP_SALT_BASE;
-    else process.env.IP_SALT_BASE = original;
-    expect(a).not.toBe(b);
+    try {
+      process.env.IP_SALT_BASE = 'custom-salt';
+      const a = hashIp('1.2.3.4');
+      process.env.IP_SALT_BASE = 'different-salt';
+      const b = hashIp('1.2.3.4');
+      expect(a).not.toBe(b);
+    } finally {
+      if (original === undefined) delete process.env.IP_SALT_BASE;
+      else process.env.IP_SALT_BASE = original;
+    }
   });
 
   it('handles empty string IP without crashing', () => {

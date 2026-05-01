@@ -333,13 +333,13 @@ describe('composite', () => {
 });
 
 describe('checkFit', () => {
-  beforeEach(() => {
-    // Make document.createElement('canvas') return a canvas-like object whose context we can inject
-    (global as any).__mockCtx = createMockContext(100).ctx;
-  });
-
+  // Each test below installs its own `vi.spyOn(document, 'createElement')`. We
+  // restore in afterEach so the spy never leaks across tests — without this,
+  // the previous test's mocked context could survive and silently shadow the
+  // next test's setup (the kind of order-dependent flakiness that hides for
+  // months until someone reorders a describe block).
   afterEach(() => {
-    delete (global as any).__mockCtx;
+    vi.restoreAllMocks();
   });
 
   it('returns ok with scale=1 when both lines fit comfortably', async () => {

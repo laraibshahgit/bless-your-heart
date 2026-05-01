@@ -1,5 +1,12 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { callGenerate } from '@/lib/api';
 import { errorCopy } from '@/content/copy';
+
+// jsdom directive above is required: this file modifies `navigator.onLine` and
+// stubs `fetch`. Running under the default `node` env worked only because Node 21+
+// added a built-in `globalThis.navigator` — older Node and CI images that pin
+// the minor would silently fail.
 
 beforeEach(() => {
   Object.defineProperty(globalThis.navigator, 'onLine', {
