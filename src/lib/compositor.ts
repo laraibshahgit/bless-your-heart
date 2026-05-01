@@ -150,7 +150,7 @@ export async function checkFit(
   const line2Scale = line2Width <= usable ? 1 : usable / line2Width;
   const minScale = Math.min(line1Scale, line2Scale);
 
-  if (minScale >= 0.95) {
+  if (minScale >= 0.6) {
     return { ok: true, scale: minScale };
   }
 
