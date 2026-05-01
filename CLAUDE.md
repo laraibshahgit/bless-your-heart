@@ -117,7 +117,7 @@ See [`.env.example`](.env.example) for the canonical template.
   8. Photo selection (3-rung fallback)
   9. Safe fallback if generation/selection both fail
 - **NEVER log prompt or output content** — log only event types: `gen_ok`, `gen_block`, `gen_distress`, `gen_rate_limited`, `gen_retry`, `gen_safe_fallback`, `gen_anthropic_error`, `rate_limit_check_failed`, `tone_check_failed`, `distress_check_failed`
-- **Rate limit**: 25/hour per IP, hashed with daily-rotated salt (`IP_SALT_BASE:YYYY-MM-DD`), SHA-256 truncated to 32 chars, stored at `rateLimits/{hashedIp}` with `expiresAt` for TTL
+- **Rate limit**: 25/hour per IP, hashed with daily-rotated salt (`IP_SALT_BASE:YYYY-MM-DD`), SHA-256 truncated to 32 chars, stored at `rateLimits/{hashedIp}` with `expiresAt` for TTL. Handler emits `X-RateLimit-Limit/Remaining/Reset` on every response where the limiter ran (intentionally absent on bypass and fail-open paths) plus `Retry-After` on `rate_limited`. `retryAfterSec` is computed from `windowStart + 1hr - now`, NOT a hardcoded value
 - **Retry budget = 2** — on exhaustion, ship a `safe_fallback` from [`fallbacks.ts`](src/server/fallbacks.ts). User NEVER sees raw error
 - **Local dev bypass**: set `RATE_LIMIT_PER_HOUR=9999` (skips entire rate-limit block)
 - **Tone check bypass**: set `ENABLE_TONE_CHECK=false` (returns true unconditionally)
@@ -169,6 +169,11 @@ Brand tokens (colors, typography scale, animation tokens): [design-system.md](.c
 ### Adding an Error Copy String
 1. Add the key to `errorCopy` in [`src/content/copy.ts`](src/content/copy.ts)
 2. Reference it from the component — never hardcode
+
+### Adding an API Field, Endpoint, or Response Variant
+1. Read [`docs/API_DESIGN_GUIDE.md`](docs/API_DESIGN_GUIDE.md) — codifies URL/field naming, status code policy, error shape, validation, rate-limit headers, and includes recipes
+2. The wrapper pattern is **always-200 with body `status` discriminator** — don't introduce `429` for `rate_limited` or `403` for `blocked`. The SPA only narrows on `body.status`; pinned by [`tests/server/generate-contract.test.ts`](tests/server/generate-contract.test.ts)
+3. Update `GenerateResponse` in [`src/types/index.ts`](src/types/index.ts) AND the mirrored Zod schema in `generate-contract.test.ts` together — they're load-bearing
 
 ---
 
