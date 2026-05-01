@@ -71,7 +71,7 @@ bless-your-heart/
     └── server/                   # Node specs incl. generate-integration.test.ts (full pipeline)
 ```
 
-**Test naming**: when adding cases to an existing module, create `<module>-extended.test.ts` rather than bloating the original file.
+**Test naming**: when adding cases to an existing module, create `<module>-extended.test.ts` rather than bloating the original file. Convention: the primary `<module>.test.ts` covers smoke-shaped basics (one or two cases per public function); the `-extended.test.ts` covers exhaustive boundaries, edge cases, and mutation-kill assertions. **Never duplicate the same assertion across the pair** — if extended pins a 60-char boundary with paired `accepts exactly 60` + `rejects 61` tests, do not also add `returns null when line1 exceeds 60` to the primary file. Cross-pair duplicates were removed in `audit-reports/05_TEST_CONSOLIDATION_REPORT_001_*.md`; don't reintroduce them.
 
 **`src/server/` is critical**: anything imported into a `src/server/*` file must NEVER be imported by client code. Mixing breaks the security boundary (e.g., bundling `slur-list.ts` to the browser leaks the moderation list).
 
@@ -182,6 +182,7 @@ Brand tokens (colors, typography scale, animation tokens): [design-system.md](.c
 - **`process.env` mutations must use `try/finally`** — assertion failures between mutate and restore would leak env state into every later test in the file's worker. Pattern: capture original, mutate inside `try`, restore inside `finally`. See [`tests/server/anthropic.test.ts`](tests/server/anthropic.test.ts) for the canonical shape.
 - **Wire-format contract for the generate endpoint lives in [`tests/server/generate-contract.test.ts`](tests/server/generate-contract.test.ts)** — Zod schema mirrors `GenerateResponse` and pins HTTP status codes, response headers, request boundaries, and every `status` discriminator. Add new response fields here AND in `src/types/index.ts` together. Keep the `generate-integration.test.ts` orchestration tests separate from these contract tests.
 - **Don't test what TypeScript catches** — discriminated union narrowing, return-type shape, nullability. Test runtime values.
+- **Default to `it.each` for 3+ structurally-parallel cases** — when several tests differ only in input/output and share setup, write a single `it.each` table rather than copy-pasting test bodies. The `$key` template syntax in the test name keeps failure messages specific. See [`tests/client/compositor.test.ts`](tests/client/compositor.test.ts) (watermark corners) and [`tests/client/download.test.ts`](tests/client/download.test.ts) (`isIOSSafari` user agents) for the canonical shape.
 - **Mark genuine bugs with `// BUG:` and skip the test** — never silently fix code in a test-writing session. Document in `audit-reports/`.
 
 ---
