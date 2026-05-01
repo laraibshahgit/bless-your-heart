@@ -141,17 +141,52 @@ describe('checkAndIncrementRateLimit', () => {
 
   it('blocks (allowed=false) when count >= limit within the window', async () => {
     process.env.RATE_LIMIT_PER_HOUR = '25';
+    const windowStartMs = Date.now() - 1000;
     buildMockDb({
       exists: true,
       data: {
         count: 25,
-        windowStart: { toMillis: () => Date.now() - 1000 },
+        windowStart: { toMillis: () => windowStartMs },
       },
     });
     const result = await checkAndIncrementRateLimit('hash-003');
     expect(result.allowed).toBe(false);
-    expect(result.retryAfterSec).toBe(60);
+    // retryAfterSec must reflect time until the WINDOW expires (windowStart + 1hr - now),
+    // not a hardcoded 60s. The previous "60" let users retry every minute and get blocked
+    // every minute, which is misleading.
+    expect(result.retryAfterSec).toBeGreaterThan(3590);
+    expect(result.retryAfterSec).toBeLessThanOrEqual(3600);
+    const expectedResetAt = Math.floor((windowStartMs + 60 * 60 * 1000) / 1000);
+    expect(result.resetAt).toBe(expectedResetAt);
+    expect(result.limit).toBe(25);
     expect(mockTx.update).not.toHaveBeenCalled();
+  });
+
+  it('clamps retryAfterSec to a minimum of 1 at the window expiry boundary', async () => {
+    // Edge case: when now ≈ windowStart + 1hr, naive computation = 0 (or negative under
+    // clock skew). Math.max(1, ...) keeps the Retry-After header meaningful.
+    process.env.RATE_LIMIT_PER_HOUR = '25';
+    const oneHourMs = 60 * 60 * 1000;
+    buildMockDb({
+      exists: true,
+      data: {
+        count: 25,
+        windowStart: { toMillis: () => Date.now() - oneHourMs },
+      },
+    });
+    const result = await checkAndIncrementRateLimit('hash-boundary');
+    if (!result.allowed) {
+      expect(result.retryAfterSec).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('includes limit and resetAt on allowed responses (for X-RateLimit-* headers)', async () => {
+    process.env.RATE_LIMIT_PER_HOUR = '25';
+    buildMockDb({ exists: false });
+    const result = await checkAndIncrementRateLimit('hash-headers-1');
+    expect(result.allowed).toBe(true);
+    expect(result.limit).toBe(25);
+    expect(result.resetAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
   });
 
   it('resets the window when the existing one is older than 1 hour', async () => {

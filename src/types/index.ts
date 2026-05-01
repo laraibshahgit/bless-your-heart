@@ -46,7 +46,7 @@ export type GenerateResponse =
   | { status: 'ok'; line1: string; line2: string; photoId: string; fittingRung: 1 | 2 | 3 | 4 }
   | { status: 'distress'; hotline: Hotline }
   | { status: 'blocked'; message: string }
-  | { status: 'rate_limited'; message: string }
+  | { status: 'rate_limited'; message: string; retryAfterSec?: number; resetAt?: number }
   | { status: 'safe_fallback'; line1: string; line2: string; photoId: string }
   | { status: 'error'; message: string; retryable: boolean };
 
@@ -62,6 +62,10 @@ export interface RateLimitResult {
   allowed: boolean;
   remaining?: number;
   retryAfterSec?: number;
+  // Epoch seconds when the current rate-limit window expires.
+  // Surfaced as `X-RateLimit-Reset` (allowed) and inside the rate_limited body (denied).
+  resetAt?: number;
+  limit?: number;
 }
 
 // ── Generation Internal ──

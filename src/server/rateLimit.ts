@@ -31,33 +31,55 @@ export async function checkAndIncrementRateLimit(hashedIp: string): Promise<Rate
     const snap = await tx.get(docRef);
     const now = Timestamp.now();
     const oneHourMs = 60 * 60 * 1000;
+    const nowMs = now.toMillis();
 
     if (!snap.exists) {
       tx.set(docRef, {
         count: 1,
         windowStart: now,
-        expiresAt: Timestamp.fromMillis(now.toMillis() + oneHourMs),
+        expiresAt: Timestamp.fromMillis(nowMs + oneHourMs),
       });
-      return { allowed: true, remaining: limit - 1 };
+      return {
+        allowed: true,
+        remaining: limit - 1,
+        limit,
+        resetAt: Math.floor((nowMs + oneHourMs) / 1000),
+      };
     }
 
     const data = snap.data()!;
-    const windowAge = now.toMillis() - data.windowStart.toMillis();
+    const windowAge = nowMs - data.windowStart.toMillis();
 
     if (windowAge > oneHourMs) {
       tx.update(docRef, {
         count: 1,
         windowStart: now,
-        expiresAt: Timestamp.fromMillis(now.toMillis() + oneHourMs),
+        expiresAt: Timestamp.fromMillis(nowMs + oneHourMs),
       });
-      return { allowed: true, remaining: limit - 1 };
+      return {
+        allowed: true,
+        remaining: limit - 1,
+        limit,
+        resetAt: Math.floor((nowMs + oneHourMs) / 1000),
+      };
     }
 
+    const windowEndMs = data.windowStart.toMillis() + oneHourMs;
+    const resetAt = Math.floor(windowEndMs / 1000);
+
     if (data.count >= limit) {
-      return { allowed: false, retryAfterSec: 60 };
+      // Pre-fix this returned a hardcoded 60s, which let users retry every minute
+      // and get blocked every minute. The real wait is until the window expires.
+      const retryAfterSec = Math.max(1, Math.ceil((windowEndMs - nowMs) / 1000));
+      return { allowed: false, retryAfterSec, resetAt, limit };
     }
 
     tx.update(docRef, { count: data.count + 1 });
-    return { allowed: true, remaining: limit - data.count - 1 };
+    return {
+      allowed: true,
+      remaining: limit - data.count - 1,
+      limit,
+      resetAt,
+    };
   });
 }

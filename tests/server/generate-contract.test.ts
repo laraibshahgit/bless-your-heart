@@ -159,20 +159,27 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('contract — HTTP method handling', () => {
-  it('GET returns 405 with plain-text body (not JSON)', async () => {
+  it('GET returns 405 with JSON error body and Allow: POST header', async () => {
     const result = await callHandler({}, {}, 'GET');
     expect((result as any).statusCode).toBe(405);
-    // 405 returns string 'Method not allowed' — NOT a GenerateResponse JSON.
-    // Documenting current behavior: it's the only response that breaks the JSON
-    // contract. If we ever harmonize, update this assertion.
-    expect((result as any).body).toBe('Method not allowed');
+    // 405 now harmonizes with the rest of the contract: JSON error shape, JSON
+    // Content-Type, and the RFC 7231-required Allow header naming the supported method.
+    expect((result as any).headers['Content-Type']).toBe('application/json; charset=utf-8');
+    expect((result as any).headers['Allow']).toBe('POST');
+    const body = JSON.parse((result as any).body);
+    const parsed = ErrorResponseSchema.parse(body);
+    expect(parsed.retryable).toBe(false);
+    expect(parsed.message.toLowerCase()).toContain('post');
   });
 
   it.each(['PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'])(
-    '%s returns 405 with plain-text body',
+    '%s returns 405 with the same JSON error shape and Allow header',
     async (method) => {
       const result = await callHandler({}, {}, method);
       expect((result as any).statusCode).toBe(405);
+      expect((result as any).headers['Allow']).toBe('POST');
+      const body = JSON.parse((result as any).body);
+      ErrorResponseSchema.parse(body);
     }
   );
 });
@@ -312,6 +319,21 @@ describe('contract — request validation', () => {
     const parsed = ErrorResponseSchema.parse(body);
     expect(parsed.message).toBeTruthy();
     expect(parsed.retryable).toBe(false);
+  });
+
+  it('validation error message names the failing field path (not a generic "Invalid request.")', async () => {
+    // Generic messages force the client to guess what's wrong. Naming the path
+    // (e.g. "prompt is too long") gives consumers the info they need without
+    // leaking the schema internals (codes, expected shape, etc.).
+    const result = await callHandler({ prompt: 'a'.repeat(201), excludePhotoIds: [] });
+    const body = JSON.parse((result as any).body);
+    expect(body.message.toLowerCase()).toContain('prompt');
+  });
+
+  it('validation error message names the failing field for missing prompt', async () => {
+    const result = await callHandler({ excludePhotoIds: [] });
+    const body = JSON.parse((result as any).body);
+    expect(body.message.toLowerCase()).toContain('prompt');
   });
 
   it('trims surrounding whitespace from prompt before length validation', async () => {

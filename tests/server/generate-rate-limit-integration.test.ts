@@ -276,6 +276,90 @@ describe('generate handler — rate-limit fail-open under infrastructure failure
   });
 });
 
+describe('generate handler — rate-limit headers (X-RateLimit-* and Retry-After)', () => {
+  it('emits X-RateLimit-Limit/Remaining/Reset on a successful (allowed) response', async () => {
+    // Headers expose the rate-limit state to clients so they can self-throttle.
+    // The handler MUST forward Limit/Remaining/Reset whenever the rate-limit
+    // module returned them — not synthesise its own values.
+    const fixedReset = Math.floor(Date.now() / 1000) + 3600;
+    rateLimitCheck.mockResolvedValueOnce({
+      allowed: true,
+      remaining: 24,
+      limit: 25,
+      resetAt: fixedReset,
+    });
+    mockHappyPathAnthropic(
+      'The morning holds quiet possibility.',
+      'Coffee is again the bravest part of it.'
+    );
+
+    const result = await callHandler({ prompt: 'morning coffee', excludePhotoIds: [] });
+    const headers = (result as any).headers;
+    expect(headers['X-RateLimit-Limit']).toBe('25');
+    expect(headers['X-RateLimit-Remaining']).toBe('24');
+    expect(headers['X-RateLimit-Reset']).toBe(String(fixedReset));
+  });
+
+  it('emits Retry-After header AND retryAfterSec body field on rate_limited', async () => {
+    // Retry-After is the standard HTTP signal for rate-limited clients; the
+    // body field gives JSON consumers the same info without parsing headers.
+    const fixedReset = Math.floor(Date.now() / 1000) + 1800;
+    rateLimitCheck.mockResolvedValueOnce({
+      allowed: false,
+      retryAfterSec: 1800,
+      resetAt: fixedReset,
+      limit: 25,
+    });
+
+    const result = await callHandler({ prompt: 'morning coffee', excludePhotoIds: [] });
+    const headers = (result as any).headers;
+    const body = JSON.parse((result as any).body);
+
+    expect(body.status).toBe('rate_limited');
+    expect(headers['Retry-After']).toBe('1800');
+    expect(headers['X-RateLimit-Limit']).toBe('25');
+    expect(headers['X-RateLimit-Reset']).toBe(String(fixedReset));
+    expect(body.retryAfterSec).toBe(1800);
+    expect(body.resetAt).toBe(fixedReset);
+  });
+
+  it('does NOT emit X-RateLimit-* headers on bypass (no rate-limit state to surface)', async () => {
+    // When the bypass env is set the handler never calls the rate-limit module,
+    // so it has nothing to advertise. Empty headers are correct (rather than
+    // fabricating values like "9999/9999").
+    const original = process.env.RATE_LIMIT_PER_HOUR;
+    process.env.RATE_LIMIT_PER_HOUR = '9999';
+    try {
+      mockHappyPathAnthropic(
+        'The morning holds quiet possibility.',
+        'Coffee is again the bravest part of it.'
+      );
+      const result = await callHandler({ prompt: 'morning coffee', excludePhotoIds: [] });
+      const headers = (result as any).headers;
+      expect(headers['X-RateLimit-Limit']).toBeUndefined();
+      expect(headers['X-RateLimit-Remaining']).toBeUndefined();
+      expect(headers['X-RateLimit-Reset']).toBeUndefined();
+    } finally {
+      process.env.RATE_LIMIT_PER_HOUR = original;
+    }
+  });
+
+  it('does NOT emit X-RateLimit-* headers when the rate-limit call fails open', async () => {
+    // The fail-open path resets rateResult to null; the handler MUST NOT pretend
+    // it has fresh rate-limit state under infrastructure failure.
+    rateLimitCheck.mockRejectedValueOnce(new Error('firestore unavailable'));
+    mockHappyPathAnthropic(
+      'The morning holds quiet possibility.',
+      'Coffee is again the bravest part of it.'
+    );
+    const result = await callHandler({ prompt: 'morning coffee', excludePhotoIds: [] });
+    const headers = (result as any).headers;
+    expect(headers['X-RateLimit-Limit']).toBeUndefined();
+    expect(headers['X-RateLimit-Remaining']).toBeUndefined();
+    expect(headers['X-RateLimit-Reset']).toBeUndefined();
+  });
+});
+
 describe('generate handler — RATE_LIMIT_PER_HOUR=9999 bypass', () => {
   it('does NOT call checkAndIncrementRateLimit when bypass env is set', async () => {
     // The bypass is the local-dev escape hatch documented in CLAUDE.md.
