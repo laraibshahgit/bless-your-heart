@@ -4,32 +4,27 @@ A single-page web app that generates anti-affirmation posters — reverent inspi
 
 ---
 
-## Workflow Rules
+## Multi-Agent Safety
 
-- **Pre-deploy checks**: `npm run lint && npm run typecheck && npm run lint:photos && npm run build`
-- **Manual smoke test before launch**: generate + download on iOS Safari
-- `main` branch auto-deploys to production via Netlify
-- Never expose `ANTHROPIC_API_KEY` to the browser — all AI calls server-side only
+This repo is operated by NightyTidy and may have multiple agents working on branches concurrently.
+
+- **NEVER delete files** — only create or modify
+- **NEVER switch, create, or merge branches** — orchestrator handles all branching
+- **NEVER run destructive git commands** — no `reset`, `clean`, `checkout --`, `rm`, force-push
+- All memory files live under [`.claude/memory/`](.claude/memory/) and are git-tracked — do not move them to user-level memory
+- When committing, write descriptive messages and commit only the files you intentionally changed
 
 ---
 
-## Tech Stack
+## Workflow Rules
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18.3+, TypeScript 5.4+, Vite 5+, Tailwind CSS 3.4+, Shadcn/UI |
-| Backend | Netlify Functions (Node 20 LTS) |
-| Database | Firestore (Spark tier — rate-limit counters only) |
-| Storage | Firebase Cloud Storage (photo library CDN) |
-| Auth | None — no user accounts |
-| AI — Generation | Claude Sonnet 4.6 (~$0.005/call) |
-| AI — Safety | Claude Haiku 4.5 (~$0.0003/call) |
-| Compositing | HTML5 Canvas API (native, not html2canvas) |
-| Analytics | PostHog (free tier, 1M events/month) |
-| Icons | lucide-react |
-| Form | react-hook-form + Zod |
-| Font | Cormorant Garamond (self-hosted via @fontsource) |
-| Testing | Vitest |
+- **Pre-deploy check**: `npm run build` (already runs `lint:photos && tsc -b --noEmit && vite build`)
+- **Single-file test**: `npx vitest run tests/path/to/file.test.ts`
+- **Watch mode**: `npm run test:watch`
+- **Manual smoke test before launch**: generate + download on iOS Safari
+- **Branch convention**: `master` is the default branch (project predates `main` rename); production deploys auto-trigger from `master` push to Netlify
+- **NEVER expose `ANTHROPIC_API_KEY` to the browser** — Claude calls live in [`src/server/anthropic.ts`](src/server/anthropic.ts), invoked only by [`netlify/functions/generate.ts`](netlify/functions/generate.ts)
+- **There is no `npm run lint`** — type-check via `npm run typecheck`. ESLint is not configured
 
 ---
 
@@ -38,210 +33,144 @@ A single-page web app that generates anti-affirmation posters — reverent inspi
 ```
 bless-your-heart/
 ├── netlify.toml, vite.config.ts, tailwind.config.ts, tsconfig.json
-├── public/
-│   ├── favicon.svg, og-hero.png, manifest.webmanifest
-│   └── examples/                # Pre-rendered hero poster PNGs
+├── firebase.json, firestore.rules, storage.rules, .firebaserc
+├── public/                       # Static assets (favicon, og-hero, examples/)
+├── PRD/                          # 25 product spec docs (00–24)
 │
 ├── src/
-│   ├── main.tsx                 # Vite entry
-│   ├── App.tsx                  # Single page
-│   ├── types/index.ts
-│   ├── components/
-│   │   ├── ui/                  # Shadcn primitives
-│   │   ├── PromptInput.tsx
-│   │   ├── PresetButtons.tsx
-│   │   ├── PosterCanvas.tsx     # Canvas rendering wrapper
-│   │   ├── PosterReveal.tsx     # Reveal animation + regenerate
-│   │   ├── DownloadButton.tsx
-│   │   ├── DistressInterstitial.tsx
-│   │   └── HeroExamples.tsx
-│   ├── lib/
-│   │   ├── api.ts               # Fetch wrapper to /api/generate
-│   │   ├── compositor.ts        # Canvas drawing logic
-│   │   ├── textFitting.ts       # Width verification
-│   │   ├── photos.ts, analytics.ts, download.ts
-│   ├── data/photos.json         # ~75 photo entries with metadata
-│   ├── content/                 # Presets, examples, copy, safety lists
+│   ├── main.tsx                  # Vite entry — wraps App in ErrorBoundary
+│   ├── App.tsx                   # Single page — orchestrates state machine
+│   ├── types/index.ts            # All shared types
+│   ├── components/               # Feature components (App-level)
+│   │   └── ui/                   # Shadcn primitives — Button, Dialog, Input, Textarea
+│   ├── lib/                      # CLIENT-only utilities (api, compositor, fonts, photos, download, analytics, cn)
+│   ├── server/                   # SERVER-only modules — bundled into Netlify function
+│   │   ├── anthropic.ts          # Claude calls + voice system prompt
+│   │   ├── safety.ts             # Slur/real-person/distress checks
+│   │   ├── distress-phrases.ts, slur-list.ts, hotlines.ts, fallbacks.ts, synonyms.ts
+│   │   ├── photoSelection.ts     # 3-rung capacity-based picker
+│   │   ├── rateLimit.ts          # Daily-salted SHA-256 IP hash + Firestore txn
+│   │   ├── validation.ts         # Zod parse + lexical specificity check
+│   │   └── firebaseAdmin.ts      # Lazy-init Firestore client
+│   ├── data/photos.json          # Photo library (10 entries currently)
+│   ├── content/                  # CLIENT in-voice copy — copy.ts, presets.ts, placeholders.ts
 │   └── styles/globals.css
 │
 ├── netlify/functions/
-│   └── generate.ts              # Single generation endpoint
+│   └── generate.ts               # Single endpoint — orchestrates filter → generate → select pipeline
 │
-├── tools/curation/              # Photo metadata tagging (local only)
-└── tests/
+├── tools/                        # Local-only scripts
+│   ├── lint-photos.ts            # CI-run validator for photos.json
+│   ├── upload-photos.mjs         # Generate gradient placeholders + upload to Firebase Storage
+│   └── upload-real-photos.mjs    # Pull from picsum.photos + upload
+└── tests/{client,server}/        # Vitest specs
 ```
 
----
-
-## Build & Run Commands
-
-```bash
-npm run build                    # Vite production build
-npx tsc -b --noEmit              # Type check only
-npm run lint                     # ESLint
-npm run lint:photos              # CI lint on photos.json
-npm test                         # Vitest
-npx vitest run src/path/to/file.test.ts  # Single test file
-
-# Deploy: auto via Netlify on push to main
-# Local dev
-netlify dev                      # Netlify dev server + functions
-```
+**`src/server/` is critical**: anything imported into a `src/server/*` file must NEVER be imported by client code. Mixing breaks the security boundary (e.g., bundling `slur-list.ts` to the browser leaks the moderation list).
 
 ---
 
 ## Environment Variables
 
-### Frontend (`.env.local`)
-```
-VITE_FIREBASE_STORAGE_BASE_URL=
-VITE_POSTHOG_KEY=
-VITE_POSTHOG_HOST=
-```
+Frontend uses `VITE_` prefix (Vite-exposed). Backend vars live in Netlify dashboard.
 
-### Backend — Netlify Functions (env vars in Netlify dashboard)
-```
-ANTHROPIC_API_KEY=               # NEVER expose to browser
-ANTHROPIC_MODEL_GEN=             # e.g., claude-sonnet-4-6
-ANTHROPIC_MODEL_SAFETY=          # e.g., claude-haiku-4-5
-FIREBASE_PROJECT_ID=
-FIREBASE_CLIENT_EMAIL=
-FIREBASE_PRIVATE_KEY=
-FIREBASE_STORAGE_BUCKET=
-RATE_LIMIT_PER_HOUR=             # default 25; set 9999 for local dev
-IP_SALT_BASE=
-```
+**Frontend** (`.env.local`): `VITE_FIREBASE_STORAGE_BASE_URL`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST`
+
+**Backend**: `ANTHROPIC_API_KEY` (NEVER exposed), `ANTHROPIC_MODEL_GEN` (default `claude-sonnet-4-6`), `ANTHROPIC_MODEL_SAFETY` (default `claude-haiku-4-5`), `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (newlines escaped as `\\n`), `FIREBASE_STORAGE_BUCKET`, `RATE_LIMIT_PER_HOUR` (default 25, set `9999` to bypass locally), `IP_SALT_BASE`, `ENABLE_TONE_CHECK` (set `false` to skip Haiku tone check)
+
+See [`.env.example`](.env.example) for the canonical template.
 
 ---
 
-## Key Architectural Rules
+## Architectural Rules
 
 ### Frontend
 
-- **Single page app** — one route, no router needed
-- **Canvas compositing** — native Canvas API, NOT html2canvas. Pixel-perfect text required
-- **Font loading** — `await document.fonts.ready` before any `measureText()` or `fillText()`
-- **Shadcn/UI** — use for all interactive elements. Never inline raw `<button>` or `<input>`
-- **No dark mode** — cream palette IS the brand
-- **Input persistence** — `sessionStorage` key `byh:lastPrompt`
-- **Minimum anticipation beat** — 800ms loading state even if API returns faster
+- **Single page app** — no router. State machine in [`App.tsx`](src/App.tsx) drives `PosterPhase` (`idle | loading | revealing | settled | error`)
+- **Native Canvas API for compositing** — NEVER use html2canvas. Pixel-perfect serif text is required; raster libraries blur it
+- **ALWAYS `await ensureFontsReady()` before `measureText()` or `fillText()`** — falling back to system serif silently breaks the joke. Helper lives in [`src/lib/fonts.ts`](src/lib/fonts.ts) and lazy-caches the promise
+- **Shadcn Button is mandatory for all `<button>` interactions** — variants: `primary | secondary | preset | ghost`. Never inline raw `<button>` (the [`PromptInput`](src/components/PromptInput.tsx) raw `<input>` is intentional — Shadcn `Input` doesn't apply the same serif placeholder treatment)
+- **No dark mode** — cream palette IS the brand. Never introduce `dark:` variants
+- **Never use red for errors** — use `feedback-quiet` (`#D9D4C8`)
+- **`sessionStorage` key for prompt persistence**: `byh:lastPrompt` (300ms debounce)
+- **800ms minimum anticipation beat** — `LOAD_FLOOR_MS` in [`App.tsx`](src/App.tsx). Even instant API responses must wait
+- **In-voice copy lives in [`src/content/`](src/content/)** — never hardcode user-facing strings in components. `copy.ts` (errors, loading, confirmation), `presets.ts` (mood chips), `placeholders.ts` (input)
 
 ### Backend
 
-- **Single endpoint** — `POST /.netlify/functions/generate`
-- **Filter order (cost-optimized)**: rate-limit → slur filter → real-person filter → distress check (Haiku) → generation (Sonnet) → tone check (Haiku)
-- **Never log prompt or output content** — only event types and metadata
-- **Rate limit**: 25/hour per hashed IP, Firestore transaction, TTL auto-delete
-- **Retry budget**: 2 retries max, then safe fallback. User never sees raw error
-- **Local dev bypass**: set `RATE_LIMIT_PER_HOUR=9999`
+- **Single endpoint**: `POST /.netlify/functions/generate`
+- **Filter pipeline (cost-ordered, `netlify/functions/generate.ts`)**:
+  1. Method/Zod validation
+  2. Rate-limit check (Firestore txn, 3s timeout, fails open on error)
+  3. Slur word-list (free)
+  4. Real-person regex (free; `PUBLIC_FIGURES` array currently empty)
+  5. Distress phrase list (free, server-only)
+  6. Distress Haiku classifier (only if phrase list misses)
+  7. Generation loop: Sonnet → Zod parse → specificity (lexical) → tone (Haiku) — up to 2 retries
+  8. Photo selection (3-rung fallback)
+  9. Safe fallback if generation/selection both fail
+- **NEVER log prompt or output content** — log only event types: `gen_ok`, `gen_block`, `gen_distress`, `gen_rate_limited`, `gen_retry`, `gen_safe_fallback`, `gen_anthropic_error`, `rate_limit_check_failed`, `tone_check_failed`, `distress_check_failed`
+- **Rate limit**: 25/hour per IP, hashed with daily-rotated salt (`IP_SALT_BASE:YYYY-MM-DD`), SHA-256 truncated to 32 chars, stored at `rateLimits/{hashedIp}` with `expiresAt` for TTL
+- **Retry budget = 2** — on exhaustion, ship a `safe_fallback` from [`fallbacks.ts`](src/server/fallbacks.ts). User NEVER sees raw error
+- **Local dev bypass**: set `RATE_LIMIT_PER_HOUR=9999` (skips entire rate-limit block)
+- **Tone check bypass**: set `ENABLE_TONE_CHECK=false` (returns true unconditionally)
 
 ### The Two-Line Contract (Non-Negotiable)
 
-- **Line 1**: 30–50 chars target, 60 hard cap. Sincere, reverent, wellness-influencer voice
-- **Line 2**: 50–88 chars target, 100 hard cap. Savagely honest pivot at the *situation*, never the user
-- The format is the joke — two visual lines, no wrapping, no exceptions
-- Specificity is what makes line 2 land — must reference user's specific situation
+- **Line 1**: target 30–50 chars, hard cap **60**. Sincere, reverent, wellness-influencer voice
+- **Line 2**: target 50–88 chars, hard cap **100**. Savagely honest pivot at the *situation*, never the user
+- The format IS the joke — exactly two visual lines, no wrapping. Specificity makes line 2 land
+
+Voice rules and validation pipeline: [voice-and-safety.md](.claude/memory/voice-and-safety.md).
 
 ---
 
 ## Conventions
 
-- **Types**: export from `types/index.ts`
-- **Components**: named exports, Shadcn primitives for all interactive elements
-- **Content strings**: all in-voice copy in `src/content/` — never hardcode in components
-- **Safety lists**: server-only — never bundle `distress-phrases.ts` or `slur-list.ts` to client
-- **Timestamps**: `serverTimestamp()` for Firestore writes
+- **Path alias**: `@/*` → `src/*` (configured in `tsconfig.json` + `vite.config.ts`)
+- **Types**: all shared types exported from [`src/types/index.ts`](src/types/index.ts)
+- **Components**: named exports (App.tsx is the lone default export)
+- **Server-only files**: anything in [`src/server/`](src/server/) — never import from client. Server tests live in [`tests/server/`](tests/server/)
+- **Timestamps**: `Timestamp.now()` from `firebase-admin/firestore` for Firestore writes
+- **Tailwind tokens**: brand color tokens (`bg-cream`, `accent-sage`, etc.) only — never raw Tailwind colors
+
+Brand tokens (colors, typography scale, animation tokens): [design-system.md](.claude/memory/design-system.md).
 
 ---
 
-## Design System Standards
-
-> **Do NOT deviate from these values.**
-
-### Colors — Brand Palette
-
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `bg-cream` | `#F7F3EC` | Page background |
-| `bg-paper` | `#FBF8F2` | Card/input surfaces |
-| `ink-deep` | `#2A2622` | Primary text |
-| `ink-soft` | `#5C5650` | Secondary text |
-| `ink-faint` | `#9A938B` | Placeholder/footer |
-| `accent-sage` | `#8B9D83` | Primary accent (buttons) |
-| `accent-sage-deep` | `#6F8267` | Hover/active |
-| `accent-rust` | `#B47855` | Secondary accent |
-| `border-mist` | `#E5DFD4` | Hairlines |
-| `feedback-quiet` | `#D9D4C8` | Error tone — **never red** |
-
-### Typography
-
-One typeface only: **Cormorant Garamond** (self-hosted via `@fontsource`).
-
-### Buttons — Pill-shaped (`rounded-full`)
-
-- `primary` — Generate, Download (sage bg, cream text)
-- `secondary` — Regenerate, dismiss (paper bg, sage border)
-- `preset` — Mood chips (paper bg, sage border on selected)
-- `ghost` — Footer links (no chrome)
-
----
-
-## Accessibility Standards
+## Accessibility
 
 - Non-interactive elements with `onClick`: add `role="button"`, `tabIndex={0}`, `onKeyDown` for Enter/Space
 - Icon-only buttons: must have `aria-label`
-- Canvas: `aria-label="Poster reading: {line1}. {line2}"`
-- Distress modal: traps focus, `aria-modal="true"`, returns focus to input on close
-
----
-
-## Data Model
-
-```
-rateLimits/{hashedIp}              # TTL auto-delete
-  count: number
-  windowStart: Timestamp
-  expiresAt: Timestamp
-
-photos.json (static, ~75 entries)  # Photo metadata with textZone, capacity, tier
-```
-
-No user data stored. No accounts. No generated content persisted.
-
----
-
-## Core Workflow
-
-1. User lands on single page, sees hero examples
-2. Types situation or clicks mood preset → populates input
-3. Clicks Generate (or Enter)
-4. Backend: safety filters → Claude generates two lines → selects photo
-5. Frontend: Canvas composites poster (800ms anticipation + 600ms reveal fade)
-6. User downloads 1080x1080 PNG or regenerates
+- Canvas: `aria-label="Poster reading: {line1}. {line2}"` (already in [`PosterCanvas.tsx`](src/components/PosterCanvas.tsx))
+- Distress modal: `aria-modal="true"`, traps focus via Radix Dialog primitive
 
 ---
 
 ## Common Recipes
 
-### Adding a Content Preset
-1. Add label to `src/content/presets.ts`
-2. If new theme, add synonym entries to `src/content/synonyms.ts`
+### Adding a Mood Preset
+1. Append label to `presets` in [`src/content/presets.ts`](src/content/presets.ts)
+2. If new theme keyword, add an entry to `synonymMap` in [`src/server/synonyms.ts`](src/server/synonyms.ts) — otherwise specificity check may reject Sonnet output
 
-### Adding a Photo to Library
-1. Use `tools/curation/` to define textZone + compute capacity
-2. Add entry to `src/data/photos.json`
-3. Run `npm run lint:photos` to validate
+### Adding a Photo to the Library
+1. Compute `textZone` (normalized 0–1) and `capacity` for line1/line2
+2. Append entry to [`src/data/photos.json`](src/data/photos.json) — id must match `^[a-z]+(-[a-z]+)*-\d{2,}$`
+3. Upload the 1080×1080 JPG to Firebase Storage at `photos/{id}.jpg` (use [`tools/upload-real-photos.mjs`](tools/upload-real-photos.mjs) as reference)
+4. `npm run build` — fails if `lint-photos.ts` rejects the entry
+
+### Adding an Error Copy String
+1. Add the key to `errorCopy` in [`src/content/copy.ts`](src/content/copy.ts)
+2. Reference it from the component — never hardcode
 
 ---
 
-## Documentation Hierarchy
+## Documentation
 
-| File | When to load |
-|------|-------------|
-| `CLAUDE.md` | Always (this file) |
-| `.claude/memory/MEMORY.md` | Always (auto-loaded navigation index) |
-| `.claude/memory/voice-and-safety.md` | Working on generation, prompts, safety filters, or tone |
-| `.claude/memory/canvas-and-compositing.md` | Working on poster rendering, text fitting, or download |
-| `.claude/memory/design-system.md` | Building or modifying UI components |
-| `.claude/memory/api-and-backend.md` | Working on the Netlify function or rate limiting |
-| `.claude/memory/prd-index.md` | Need detailed specs — maps topics to PRD doc numbers |
+Tiered system: CLAUDE.md → [MEMORY.md](.claude/memory/MEMORY.md) → topic files (`.claude/memory/*.md`). Max 2 hops from cold start.
+
+**Placement rule**: Prevents mistakes on ANY task → CLAUDE.md. Spans features → MEMORY.md. One feature → topic file.
+
+**Updating docs**: When code changes affect a rule in CLAUDE.md, update CLAUDE.md. When code changes affect a feature covered by a memory file, update that file. Topic files target 40–150 lines — split into hub + sub-topic files when content clusters into distinct concerns.
+
+For PRD specs (deep reference, never auto-loaded): [prd-index.md](.claude/memory/prd-index.md) maps topics to `PRD/##_*.md` doc numbers.
