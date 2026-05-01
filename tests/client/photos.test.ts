@@ -58,21 +58,16 @@ describe('getPhotoById', () => {
 });
 
 describe('getAllCredits', () => {
-  it('returns objects with id and credit fields', async () => {
+  // Merged from two tests ('returns objects with id and credit fields' and
+  // 'skips photos with empty credit'): the original "skips empty credit" assertion
+  // is fully implied by the >0-length check, and both iterated the same array.
+  it('returns objects with non-empty id and credit (skipping any photos with empty credit)', async () => {
     const { getAllCredits } = await import('@/lib/photos');
     const credits = getAllCredits();
     for (const c of credits) {
       expect(typeof c.id).toBe('string');
       expect(typeof c.credit).toBe('string');
       expect(c.credit.length).toBeGreaterThan(0);
-    }
-  });
-
-  it('skips photos with empty credit', async () => {
-    const { getAllCredits } = await import('@/lib/photos');
-    const credits = getAllCredits();
-    for (const c of credits) {
-      expect(c.credit).not.toBe('');
     }
   });
 });
