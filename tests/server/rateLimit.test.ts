@@ -6,21 +6,13 @@ vi.mock('@/server/firebaseAdmin', () => ({
 
 import { hashIp } from '@/server/rateLimit';
 
+// The hex-string and same-day-consistency assertions live in rateLimit-extended.test.ts
+// (which mocks Firestore comprehensively). This file keeps only the assertion that's NOT
+// redundant: that DIFFERENT IPs hash to different values.
 describe('hashIp', () => {
-  it('produces a 32-char hex string', () => {
-    const result = hashIp('127.0.0.1');
-    expect(result).toMatch(/^[a-f0-9]{32}$/);
-  });
-
   it('produces different hashes for different IPs', () => {
     const a = hashIp('127.0.0.1');
     const b = hashIp('192.168.1.1');
     expect(a).not.toBe(b);
-  });
-
-  it('produces consistent output for same input on same day', () => {
-    const a = hashIp('127.0.0.1');
-    const b = hashIp('127.0.0.1');
-    expect(a).toBe(b);
   });
 });
