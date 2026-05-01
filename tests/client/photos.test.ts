@@ -36,6 +36,20 @@ describe('getPhotoUrl', () => {
     const url = getPhotoUrl('weird id-99');
     expect(url).toContain('photos%2Fweird%20id-99.jpg');
   });
+
+  it('produces a double-slashed URL when base ends with "/" (documented behavior, not normalized)', async () => {
+    // BOUNDARY DOC: the env var format is implicitly "no trailing slash".
+    // `getPhotoUrl` does `${base}/${path}` — if `base` ends with "/", the URL
+    // contains a literal "//". Firebase Storage's REST endpoint tolerates
+    // this in practice (it normalizes), but a stricter CDN or signed-URL
+    // proxy could reject it. Pinning the current behavior so a future env
+    // change to a stricter host produces a clear test failure here BEFORE
+    // it produces a 404 in production.
+    vi.stubEnv('VITE_FIREBASE_STORAGE_BASE_URL', 'https://example.com/');
+    const { getPhotoUrl } = await import('@/lib/photos');
+    const url = getPhotoUrl('a-01');
+    expect(url).toBe('https://example.com//photos%2Fa-01.jpg?alt=media');
+  });
 });
 
 describe('getPhotoById', () => {

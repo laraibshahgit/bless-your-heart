@@ -252,4 +252,35 @@ describe('checkAndIncrementRateLimit', () => {
       expect.objectContaining({ count: 1 })
     );
   });
+
+  // Boundary: corrupt Firestore document. There is no read-time schema check,
+  // so a doc missing `windowStart` (manual edit, partial write, schema drift)
+  // would crash inside the transaction. The handler's try/catch around the
+  // rate-limit call is what saves the user — these tests pin that the
+  // FUNCTION ITSELF rejects the promise (rather than e.g. returning a wrong
+  // result) so the catch in generate.ts:69 fires and the request fails open.
+  it('rejects when an existing doc is missing windowStart (corrupt data)', async () => {
+    buildMockDb({
+      exists: true,
+      data: { count: 5 }, // windowStart absent — TypeError on `.toMillis()`
+    });
+    await expect(checkAndIncrementRateLimit('hash-corrupt-1')).rejects.toThrow();
+    // Critical: tx must NOT have been written. A partial write here would
+    // poison the doc further.
+    expect(mockTx.update).not.toHaveBeenCalled();
+    expect(mockTx.set).not.toHaveBeenCalled();
+  });
+
+  it('rejects when windowStart exists but is not a Timestamp-shaped value (corrupt data)', async () => {
+    buildMockDb({
+      exists: true,
+      data: {
+        count: 3,
+        // Plain number instead of { toMillis: ... } — would happen if a future
+        // refactor stored windowStart as ms directly without updating the read.
+        windowStart: 1234567890,
+      },
+    });
+    await expect(checkAndIncrementRateLimit('hash-corrupt-2')).rejects.toThrow();
+  });
 });
