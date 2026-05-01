@@ -21,46 +21,32 @@ afterEach(() => {
 });
 
 describe('isIOSSafari', () => {
-  it('returns true for iPhone Safari user agent', () => {
-    setUserAgent(
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1'
-    );
-    expect(isIOSSafari()).toBe(true);
-  });
-
-  it('returns true for iPad Safari user agent', () => {
-    setUserAgent(
-      'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Safari/604.1'
-    );
-    expect(isIOSSafari()).toBe(true);
-  });
-
-  it('returns false for iPhone Chrome (CriOS)', () => {
-    setUserAgent(
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 CriOS/120.0 Mobile/15E148 Safari/604.1'
-    );
-    expect(isIOSSafari()).toBe(false);
-  });
-
-  it('returns false for iPhone Firefox (FxiOS)', () => {
-    setUserAgent(
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 FxiOS/120.0 Mobile/15E148 Safari/604.1'
-    );
-    expect(isIOSSafari()).toBe(false);
-  });
-
-  it('returns false for desktop Safari (no iP*)', () => {
-    setUserAgent(
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15'
-    );
-    expect(isIOSSafari()).toBe(false);
-  });
-
-  it('returns false for Android Chrome', () => {
-    setUserAgent(
-      'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36'
-    );
-    expect(isIOSSafari()).toBe(false);
+  // Six near-identical user-agent checks parameterized into one it.each table.
+  // The label includes the platform/browser so failures still pinpoint which
+  // case broke. CriOS and FxiOS rows are the load-bearing cases — they are
+  // iPhone user agents that must NOT match (in-app browsers). Don't drop them.
+  it.each([
+    { label: 'iPhone Safari',
+      ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1',
+      expected: true },
+    { label: 'iPad Safari',
+      ua: 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Safari/604.1',
+      expected: true },
+    { label: 'iPhone Chrome (CriOS)',
+      ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 CriOS/120.0 Mobile/15E148 Safari/604.1',
+      expected: false },
+    { label: 'iPhone Firefox (FxiOS)',
+      ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 FxiOS/120.0 Mobile/15E148 Safari/604.1',
+      expected: false },
+    { label: 'desktop Safari (no iP*)',
+      ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15',
+      expected: false },
+    { label: 'Android Chrome',
+      ua: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36',
+      expected: false },
+  ])('returns $expected for $label user agent', ({ ua, expected }) => {
+    setUserAgent(ua);
+    expect(isIOSSafari()).toBe(expected);
   });
 });
 
