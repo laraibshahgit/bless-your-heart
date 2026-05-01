@@ -21,6 +21,8 @@ This repo is operated by NightyTidy and may have multiple agents working on bran
 - **Pre-deploy check**: `npm run build` (already runs `lint:photos && tsc -b --noEmit && vite build`)
 - **Single-file test**: `npx vitest run tests/path/to/file.test.ts`
 - **Watch mode**: `npm run test:watch`
+- **Fast smoke check (after deploy)**: `npx vitest run tests/smoke.test.ts` — 7 critical-path tests, < 400 ms
+- **Coverage report**: `npx vitest run --coverage --coverage.include='src/**/*.{ts,tsx}' --coverage.exclude='src/**/*.d.ts' --coverage.exclude='src/main.tsx'` (uses `@vitest/coverage-v8`)
 - **Manual smoke test before launch**: generate + download on iOS Safari
 - **Branch convention**: `master` is the default branch (project predates `main` rename); production deploys auto-trigger from `master` push to Netlify
 - **NEVER expose `ANTHROPIC_API_KEY` to the browser** — Claude calls live in [`src/server/anthropic.ts`](src/server/anthropic.ts), invoked only by [`netlify/functions/generate.ts`](netlify/functions/generate.ts)
@@ -63,8 +65,13 @@ bless-your-heart/
 │   ├── lint-photos.ts            # CI-run validator for photos.json
 │   ├── upload-photos.mjs         # Generate gradient placeholders + upload to Firebase Storage
 │   └── upload-real-photos.mjs    # Pull from picsum.photos + upload
-└── tests/{client,server}/        # Vitest specs
+└── tests/
+    ├── smoke.test.ts             # Bouncer suite — 7 critical-path checks, < 400 ms
+    ├── client/                   # Browser/jsdom specs (use `// @vitest-environment jsdom`)
+    └── server/                   # Node specs incl. generate-integration.test.ts (full pipeline)
 ```
+
+**Test naming**: when adding cases to an existing module, create `<module>-extended.test.ts` rather than bloating the original file.
 
 **`src/server/` is critical**: anything imported into a `src/server/*` file must NEVER be imported by client code. Mixing breaks the security boundary (e.g., bundling `slur-list.ts` to the browser leaks the moderation list).
 
@@ -162,6 +169,18 @@ Brand tokens (colors, typography scale, animation tokens): [design-system.md](.c
 ### Adding an Error Copy String
 1. Add the key to `errorCopy` in [`src/content/copy.ts`](src/content/copy.ts)
 2. Reference it from the component — never hardcode
+
+---
+
+## Testing Patterns (Non-Obvious)
+
+- **Default Vitest env is `node`** (set in `vite.config.ts`). For tests that touch DOM/`navigator`/`Image`, add `// @vitest-environment jsdom` as the **first line** of the file. `globals: true` means `describe`/`it`/`expect`/`vi` are auto-imported.
+- **Mocking the Anthropic SDK requires `vi.hoisted`** — the client is instantiated at module-load time in [`src/server/anthropic.ts`](src/server/anthropic.ts), so plain top-level `vi.fn()` vars aren't initialized in time. See [`tests/server/generate-integration.test.ts`](tests/server/generate-integration.test.ts) for the pattern.
+- **Override the slur list in safety tests** with `vi.mock('@/server/slur-list', () => ({ slurList: ['testblockedslur'] }))` to avoid leaking the real moderation list into test fixtures or CI logs.
+- **Canvas mocking**: jsdom's `getContext('2d')` is incomplete (`measureText`/`fillText`/etc. are stubs). Build a recording mock context and inject via `vi.spyOn(document, 'createElement').mockReturnValue(...)`. See [`tests/client/compositor.test.ts`](tests/client/compositor.test.ts).
+- **Firestore mocking for rate-limit**: stub both `getDb` and `firebase-admin/firestore`'s `Timestamp` to drive transactions without credentials. See [`tests/server/rateLimit-extended.test.ts`](tests/server/rateLimit-extended.test.ts).
+- **Don't test what TypeScript catches** — discriminated union narrowing, return-type shape, nullability. Test runtime values.
+- **Mark genuine bugs with `// BUG:` and skip the test** — never silently fix code in a test-writing session. Document in `audit-reports/`.
 
 ---
 
