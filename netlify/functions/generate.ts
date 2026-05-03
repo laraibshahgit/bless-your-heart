@@ -190,10 +190,11 @@ const handler: Handler = async (event: HandlerEvent) => {
     );
   }
 
-  const distressPhrase = checkDistressPhraseList(prompt);
-  const distressHaiku = distressPhrase ? true : await checkDistressWithHaiku(anthropic, prompt);
+  // Short-circuit: phrase list is free; only call Haiku if the phrase list misses.
+  const isDistress =
+    checkDistressPhraseList(prompt) || (await checkDistressWithHaiku(anthropic, prompt));
 
-  if (distressPhrase || distressHaiku) {
+  if (isDistress) {
     console.log(JSON.stringify({ event: 'gen_distress' }));
     const country = (event.headers['x-country'] ?? '').toUpperCase();
     return jsonResponse(
