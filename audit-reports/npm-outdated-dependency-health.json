@@ -1,0 +1,30 @@
+{
+  "posthog-js": {
+    "current": "1.372.5",
+    "wanted": "1.372.6",
+    "latest": "1.372.6",
+    "dependent": "Bless Your Heart",
+    "location": "C:\\Users\\larai\\Documents\\Software Projects\\Bless Your Heart\\node_modules\\posthog-js"
+  },
+  "react-hook-form": {
+    "current": "7.74.0",
+    "wanted": "7.75.0",
+    "latest": "7.75.0",
+    "dependent": "Bless Your Heart",
+    "location": "C:\\Users\\larai\\Documents\\Software Projects\\Bless Your Heart\\node_modules\\react-hook-form"
+  },
+  "tailwindcss": {
+    "current": "3.4.19",
+    "wanted": "3.4.19",
+    "latest": "4.2.4",
+    "dependent": "Bless Your Heart",
+    "location": "C:\\Users\\larai\\Documents\\Software Projects\\Bless Your Heart\\node_modules\\tailwindcss"
+  },
+  "zod": {
+    "current": "4.4.1",
+    "wanted": "4.4.2",
+    "latest": "4.4.2",
+    "dependent": "Bless Your Heart",
+    "location": "C:\\Users\\larai\\Documents\\Software Projects\\Bless Your Heart\\node_modules\\zod"
+  }
+}
