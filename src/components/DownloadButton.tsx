@@ -13,26 +13,28 @@ export function DownloadButton() {
     const canvas = document.querySelector('canvas');
     if (!canvas) return;
 
-    setStatus('downloading');
+    const onIOSSafari = isIOSSafari();
 
-    if (isIOSSafari()) {
-      setShowIOSHint(true);
-    }
+    setStatus('downloading');
+    if (onIOSSafari) setShowIOSHint(true);
 
     const success = await downloadPoster(canvas);
 
-    if (success) {
-      track('poster_downloaded');
-      if (!isIOSSafari()) {
-        setStatus('confirmed');
-        setTimeout(() => setStatus('idle'), 2500);
-      } else {
-        setStatus('idle');
-      }
-    } else {
+    if (!success) {
       setStatus('error');
       setTimeout(() => setStatus('idle'), 3000);
+      return;
     }
+
+    track('poster_downloaded');
+
+    if (onIOSSafari) {
+      setStatus('idle');
+      return;
+    }
+
+    setStatus('confirmed');
+    setTimeout(() => setStatus('idle'), 2500);
   }
 
   return (
