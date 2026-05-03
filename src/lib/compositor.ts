@@ -12,7 +12,7 @@ export async function loadImage(url: string): Promise<HTMLImageElement> {
   return img;
 }
 
-export interface CompositeOptions {
+interface CompositeOptions {
   canvas: HTMLCanvasElement;
   img: HTMLImageElement;
   photo: Photo;
@@ -114,7 +114,7 @@ function drawWatermark(ctx: CanvasRenderingContext2D, photo: Photo): void {
   ctx.globalAlpha = 1.0;
 }
 
-export type FitCheckResult = {
+type FitCheckResult = {
   ok: true;
   scale: number;
 } | {
