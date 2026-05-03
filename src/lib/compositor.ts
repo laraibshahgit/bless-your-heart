@@ -4,6 +4,12 @@ import { ensureFontsReady } from './fonts';
 const LOGICAL_SIZE = 1080;
 const PADDING = 24;
 
+function setLetterSpacing(ctx: CanvasRenderingContext2D, value: string): void {
+  if ('letterSpacing' in ctx) {
+    (ctx as unknown as { letterSpacing: string }).letterSpacing = value;
+  }
+}
+
 export async function loadImage(url: string): Promise<HTMLImageElement> {
   const img = new Image();
   img.crossOrigin = 'anonymous';
@@ -58,17 +64,13 @@ export function composite({ canvas, img, photo, line1, line2, scale = 1 }: Compo
   ctx.font = `500 ${line1Size}px "Cormorant Garamond"`;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'center';
-  if ('letterSpacing' in ctx) {
-    (ctx as any).letterSpacing = '0.02em';
-  }
+  setLetterSpacing(ctx, '0.02em');
   const line1Y = zoneY + PADDING;
   ctx.fillText(line1, centerX, line1Y);
 
   const line2Size = Math.round(44 * scale);
   ctx.font = `italic 400 ${line2Size}px "Cormorant Garamond"`;
-  if ('letterSpacing' in ctx) {
-    (ctx as any).letterSpacing = '0.01em';
-  }
+  setLetterSpacing(ctx, '0.01em');
   const line2Y = line1Y + line1Size * 1.15 + 16;
   ctx.fillText(line2, centerX, line2Y);
 
@@ -82,9 +84,7 @@ function drawWatermark(ctx: CanvasRenderingContext2D, photo: Photo): void {
   const padding = 32;
 
   ctx.font = '400 18px "Cormorant Garamond"';
-  if ('letterSpacing' in ctx) {
-    (ctx as any).letterSpacing = '0.04em';
-  }
+  setLetterSpacing(ctx, '0.04em');
   ctx.fillStyle = photo.textColor === 'white' ? '#FFFFFF' : '#1A1612';
   ctx.globalAlpha = 0.85;
 
@@ -135,15 +135,11 @@ export async function checkFit(
   const usable = photo.textZone.width * LOGICAL_SIZE - 2 * PADDING;
 
   ctx.font = '500 64px "Cormorant Garamond"';
-  if ('letterSpacing' in ctx) {
-    (ctx as any).letterSpacing = '0.02em';
-  }
+  setLetterSpacing(ctx, '0.02em');
   const line1Width = ctx.measureText(line1).width;
 
   ctx.font = 'italic 400 44px "Cormorant Garamond"';
-  if ('letterSpacing' in ctx) {
-    (ctx as any).letterSpacing = '0.01em';
-  }
+  setLetterSpacing(ctx, '0.01em');
   const line2Width = ctx.measureText(line2).width;
 
   const line1Scale = line1Width <= usable ? 1 : usable / line1Width;
