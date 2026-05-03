@@ -6,6 +6,10 @@ import type { RateLimitResult } from '@/types';
 const COLLECTION = 'rateLimits';
 
 export function hashIp(rawIp: string): string {
+  // UTC-anchored daily salt. `.toISOString()` always returns UTC regardless of
+  // the host TZ — do NOT swap to `.toLocaleDateString()` or `getDate()`/`getMonth()`,
+  // which would shift the rotation boundary by host TZ and produce mismatched
+  // hashes across multi-region serverless deployments.
   const date = new Date().toISOString().slice(0, 10);
   const salt = `${process.env.IP_SALT_BASE ?? 'byh-default-salt'}:${date}`;
   return createHash('sha256')

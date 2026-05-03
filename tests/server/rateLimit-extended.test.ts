@@ -78,6 +78,56 @@ describe('hashIp (extended)', () => {
   it('handles IPv6 IPs', () => {
     expect(hashIp('2001:db8::1')).toMatch(/^[a-f0-9]{32}$/);
   });
+
+  // Daily-salt UTC anchoring (regression pin). A future refactor that swapped
+  // `new Date().toISOString().slice(0, 10)` for a server-local equivalent
+  // (`toLocaleDateString()`, `getDate()`, etc.) would break determinism across
+  // multi-region serverless deployments — same user, same instant, different
+  // hash depending on which region served the request. These three cases pin
+  // the contract that the salt rotates ONLY at UTC midnight, regardless of the
+  // host TZ. Captured by the audit at audit-reports/14_DATETIME_HANDLING_*.md.
+  describe('hashIp — UTC-anchored salt rotation', () => {
+    const fixedSalt = 'fixed-base';
+    let originalSalt: string | undefined;
+
+    beforeEach(() => {
+      originalSalt = process.env.IP_SALT_BASE;
+      process.env.IP_SALT_BASE = fixedSalt;
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      if (originalSalt === undefined) delete process.env.IP_SALT_BASE;
+      else process.env.IP_SALT_BASE = originalSalt;
+    });
+
+    it('produces the same hash at two different UTC times within the same UTC day', () => {
+      vi.setSystemTime(new Date('2026-05-04T00:01:00Z'));
+      const earlyMorning = hashIp('203.0.113.42');
+      vi.setSystemTime(new Date('2026-05-04T23:59:00Z'));
+      const lateNight = hashIp('203.0.113.42');
+      expect(earlyMorning).toBe(lateNight);
+    });
+
+    it('produces a different hash when crossing UTC midnight', () => {
+      vi.setSystemTime(new Date('2026-05-04T23:59:00Z'));
+      const beforeMidnight = hashIp('203.0.113.42');
+      vi.setSystemTime(new Date('2026-05-05T00:01:00Z'));
+      const afterMidnight = hashIp('203.0.113.42');
+      expect(beforeMidnight).not.toBe(afterMidnight);
+    });
+
+    it('is deterministic for a given (IP, UTC day, salt-base) tuple', () => {
+      // Pinning a literal hash makes salt-format drift immediately visible.
+      // If someone changes the salt template (e.g. swaps the colon for a
+      // hyphen, or reorders fields), this test fails with a clear diff.
+      vi.setSystemTime(new Date('2026-05-04T12:00:00Z'));
+      // sha256('203.0.113.42:fixed-base:2026-05-04').hex.slice(0, 32)
+      const expected = '609930eb3dcb58e5232ac9d29f0b65b0';
+      expect(hashIp('203.0.113.42')).toBe(expected);
+    });
+  });
 });
 
 describe('getClientIp', () => {
@@ -286,6 +336,63 @@ describe('checkAndIncrementRateLimit', () => {
       mockDocRef,
       expect.objectContaining({ count: 1 })
     );
+  });
+
+  // TTL contract: expiresAt MUST be windowStart + 1 hour on every write that
+  // touches windowStart (initial creation + window reset). Firestore's TTL
+  // policy auto-deletes documents at `expiresAt`, which is what keeps the
+  // `rateLimits` collection from growing without bound. A refactor that drops
+  // the `expiresAt: Timestamp.fromMillis(nowMs + oneHourMs)` line — or
+  // miscalculates it — would silently let the collection grow forever and
+  // eventually exceed the Firestore free-tier (audited
+  // 2026-05-04 in datetime-handling report 001).
+  it('writes expiresAt = windowStart + 1 hour on initial doc creation (TTL contract)', async () => {
+    const oneHourMs = 60 * 60 * 1000;
+    buildMockDb({ exists: false });
+    await checkAndIncrementRateLimit('hash-ttl-create');
+    expect(mockTx.set).toHaveBeenCalledTimes(1);
+    const written = mockTx.set.mock.calls[0][1];
+    const windowStartMs = written.windowStart.toMillis();
+    const expiresAtMs = written.expiresAt.toMillis();
+    expect(expiresAtMs - windowStartMs).toBe(oneHourMs);
+  });
+
+  it('writes expiresAt = windowStart + 1 hour when resetting an expired window (TTL contract)', async () => {
+    const oneHourMs = 60 * 60 * 1000;
+    buildMockDb({
+      exists: true,
+      data: {
+        count: 30,
+        windowStart: { toMillis: () => Date.now() - oneHourMs - 1 },
+      },
+    });
+    await checkAndIncrementRateLimit('hash-ttl-reset');
+    expect(mockTx.update).toHaveBeenCalledTimes(1);
+    const written = mockTx.update.mock.calls[0][1];
+    expect(written.windowStart, 'reset path must rewrite windowStart').toBeDefined();
+    expect(written.expiresAt, 'reset path must rewrite expiresAt for TTL').toBeDefined();
+    const windowStartMs = written.windowStart.toMillis();
+    const expiresAtMs = written.expiresAt.toMillis();
+    expect(expiresAtMs - windowStartMs).toBe(oneHourMs);
+  });
+
+  // Counterpart: the count-increment branch (still inside the window) must
+  // NOT touch windowStart or expiresAt. Otherwise users could keep their
+  // window alive past 1 hour by spamming requests, defeating the cap, AND
+  // TTL deletion would slide forward indefinitely.
+  it('count-increment within the window does NOT rewrite windowStart or expiresAt', async () => {
+    buildMockDb({
+      exists: true,
+      data: {
+        count: 5,
+        windowStart: { toMillis: () => Date.now() - 1000 }, // 1 sec ago, still valid
+      },
+    });
+    await checkAndIncrementRateLimit('hash-ttl-noop');
+    expect(mockTx.update).toHaveBeenCalledTimes(1);
+    const written = mockTx.update.mock.calls[0][1];
+    expect(written.windowStart, 'increment must not slide windowStart').toBeUndefined();
+    expect(written.expiresAt, 'increment must not slide expiresAt (TTL would never fire)').toBeUndefined();
   });
 
   // Boundary: corrupt Firestore document. There is no read-time schema check,
