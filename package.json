@@ -32,8 +32,6 @@
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
     "@netlify/functions": "^5.2.0",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
     "@types/file-saver": "^2.0.7",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
