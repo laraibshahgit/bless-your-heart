@@ -44,6 +44,21 @@ function rateLimitHeaders(rate: RateLimitResult | null): Record<string, string> 
   return out;
 }
 
+function respondWithSafeFallback(rateHeaders: Record<string, string>) {
+  console.log(JSON.stringify({ event: 'gen_safe_fallback' }));
+  const fallback = safeFallbacks[Math.floor(Math.random() * safeFallbacks.length)];
+  return jsonResponse(
+    {
+      status: 'safe_fallback',
+      line1: fallback.line1,
+      line2: fallback.line2,
+      photoId: fallback.photoId,
+    },
+    200,
+    rateHeaders
+  );
+}
+
 function normalizePrompt(raw: string): string {
   return raw.trim().replace(/\n/g, ' ').replace(/\s{2,}/g, ' ');
 }
@@ -225,18 +240,7 @@ const handler: Handler = async (event: HandlerEvent) => {
   }
 
   if (!lastOutput) {
-    console.log(JSON.stringify({ event: 'gen_safe_fallback' }));
-    const fallback = safeFallbacks[Math.floor(Math.random() * safeFallbacks.length)];
-    return jsonResponse(
-      {
-        status: 'safe_fallback',
-        line1: fallback.line1,
-        line2: fallback.line2,
-        photoId: fallback.photoId,
-      },
-      200,
-      successRateHeaders
-    );
+    return respondWithSafeFallback(successRateHeaders);
   }
 
   const photoResult = selectPhoto(
@@ -247,18 +251,7 @@ const handler: Handler = async (event: HandlerEvent) => {
   );
 
   if (!photoResult) {
-    console.log(JSON.stringify({ event: 'gen_safe_fallback' }));
-    const fallback = safeFallbacks[Math.floor(Math.random() * safeFallbacks.length)];
-    return jsonResponse(
-      {
-        status: 'safe_fallback',
-        line1: fallback.line1,
-        line2: fallback.line2,
-        photoId: fallback.photoId,
-      },
-      200,
-      successRateHeaders
-    );
+    return respondWithSafeFallback(successRateHeaders);
   }
 
   const fittingRung = photoResult.rung === 3 ? 3 : photoResult.rung;
