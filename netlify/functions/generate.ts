@@ -254,7 +254,7 @@ const handler: Handler = async (event: HandlerEvent) => {
     return respondWithSafeFallback(successRateHeaders);
   }
 
-  const fittingRung = photoResult.rung === 3 ? 3 : photoResult.rung;
+  const fittingRung = photoResult.rung;
   console.log(JSON.stringify({
     event: 'gen_ok',
     fittingRung,
@@ -268,7 +268,7 @@ const handler: Handler = async (event: HandlerEvent) => {
       line1: lastOutput.line1,
       line2: lastOutput.line2,
       photoId: photoResult.photoId,
-      fittingRung: fittingRung as 1 | 2 | 3 | 4,
+      fittingRung,
     },
     200,
     successRateHeaders
