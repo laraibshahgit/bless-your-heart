@@ -184,6 +184,56 @@ describe('contract — HTTP method handling', () => {
   );
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CSRF / origin shield (env-driven; unset is a no-op)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('contract — Origin allowlist (CSRF shield)', () => {
+  afterEach(() => {
+    delete process.env.ALLOWED_ORIGINS;
+  });
+
+  it('passes through when ALLOWED_ORIGINS is unset (backward-compat default)', async () => {
+    mockHaikuReply('ok');
+    mockSonnetReply('The morning holds quiet possibility.', 'Coffee is the bravest part of it.');
+    const result = await callHandler(
+      { prompt: 'morning coffee', excludePhotoIds: [] },
+      { origin: 'https://evil.example' }
+    );
+    expect((result as any).statusCode).toBe(200);
+  });
+
+  it('passes through when Origin header is absent (server-to-server)', async () => {
+    process.env.ALLOWED_ORIGINS = 'https://blessyourheart.app';
+    mockHaikuReply('ok');
+    mockSonnetReply('The morning holds quiet possibility.', 'Coffee is the bravest part of it.');
+    const result = await callHandler({ prompt: 'morning coffee', excludePhotoIds: [] }, {});
+    expect((result as any).statusCode).toBe(200);
+  });
+
+  it('rejects with 403 when Origin is present and not in allowlist', async () => {
+    process.env.ALLOWED_ORIGINS = 'https://blessyourheart.app';
+    const result = await callHandler(
+      { prompt: 'morning coffee', excludePhotoIds: [] },
+      { origin: 'https://evil.example' }
+    );
+    expect((result as any).statusCode).toBe(403);
+    const body = JSON.parse((result as any).body);
+    ErrorResponseSchema.parse(body);
+  });
+
+  it('accepts Origin that exactly matches an allowlist entry (case-insensitive)', async () => {
+    process.env.ALLOWED_ORIGINS = 'https://blessyourheart.app, https://staging.blessyourheart.app';
+    mockHaikuReply('ok');
+    mockSonnetReply('The morning holds quiet possibility.', 'Coffee is the bravest part of it.');
+    const result = await callHandler(
+      { prompt: 'morning coffee', excludePhotoIds: [] },
+      { origin: 'HTTPS://BlessYourHeart.app' }
+    );
+    expect((result as any).statusCode).toBe(200);
+  });
+});
+
 describe('contract — response headers', () => {
   it('400 response includes Content-Type: application/json; charset=utf-8', async () => {
     const result = await callHandler('not-json{');

@@ -48,6 +48,21 @@ function normalizePrompt(raw: string): string {
   return raw.trim().replace(/\n/g, ' ').replace(/\s{2,}/g, ' ');
 }
 
+// CSRF / cross-origin cost-amplification defense.
+// When ALLOWED_ORIGINS is set (comma-separated list of origins), reject
+// browser-originated POSTs whose Origin header is not in the allowlist.
+// Server-to-server clients (curl, monitors, function-to-function) typically
+// omit Origin and are passed through untouched. Unset env var = no-op,
+// preserving backward-compatible behavior. Origin spoofing is impossible
+// from a browser context, so this is a meaningful CSRF shield.
+function isOriginAllowed(originHeader: string | undefined): boolean {
+  if (!originHeader) return true;
+  const allowList = (process.env.ALLOWED_ORIGINS ?? '').trim();
+  if (!allowList) return true;
+  const allowed = allowList.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return allowed.includes(originHeader.toLowerCase());
+}
+
 // Translate a Zod issue into a short, consumer-safe message: just the failing
 // path and the kind of failure. Avoids leaking internal schema shape.
 function describeZodIssue(error: z.ZodError): string {
@@ -79,6 +94,14 @@ const handler: Handler = async (event: HandlerEvent) => {
         retryable: false,
       } satisfies GenerateResponse),
     };
+  }
+
+  if (!isOriginAllowed(event.headers.origin ?? event.headers.Origin)) {
+    console.log(JSON.stringify({ event: 'gen_block', reason: 'origin' }));
+    return jsonResponse(
+      { status: 'error', message: 'Forbidden.', retryable: false },
+      403
+    );
   }
 
   let parsed;
