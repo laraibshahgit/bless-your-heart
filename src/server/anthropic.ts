@@ -116,8 +116,8 @@ export async function checkTone(
       : 'safe';
 
     return verdict.startsWith('safe');
-  } catch {
-    console.error(JSON.stringify({ event: 'tone_check_failed' }));
+  } catch (err) {
+    console.error(JSON.stringify({ event: 'tone_check_failed', error: String(err) }));
     return true;
   }
 }

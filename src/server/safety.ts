@@ -65,8 +65,8 @@ export async function checkDistressWithHaiku(
       : 'ok';
 
     return verdict.startsWith('crisis');
-  } catch {
-    console.error(JSON.stringify({ event: 'distress_check_failed' }));
+  } catch (err) {
+    console.error(JSON.stringify({ event: 'distress_check_failed', error: String(err) }));
     return false;
   }
 }

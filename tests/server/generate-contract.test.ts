@@ -94,6 +94,10 @@ const BlockedResponseSchema = z.object({
 const RateLimitedResponseSchema = z.object({
   status: z.literal('rate_limited'),
   message: z.string().min(1),
+  // Optional in the type — pinned here so a future schema change that drops them
+  // (or types them differently) trips the contract instead of slipping through.
+  retryAfterSec: z.number().int().nonnegative().optional(),
+  resetAt: z.number().int().nonnegative().optional(),
 });
 
 const SafeFallbackResponseSchema = z.object({
