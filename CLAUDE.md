@@ -83,7 +83,7 @@ Frontend uses `VITE_` prefix (Vite-exposed). Backend vars live in Netlify dashbo
 
 **Frontend** (`.env.local`): `VITE_FIREBASE_STORAGE_BASE_URL`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST`
 
-**Backend**: `ANTHROPIC_API_KEY` (NEVER exposed), `ANTHROPIC_MODEL_GEN` (default `claude-sonnet-4-6`), `ANTHROPIC_MODEL_SAFETY` (default `claude-haiku-4-5`), `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (newlines escaped as `\\n`), `FIREBASE_STORAGE_BUCKET`, `RATE_LIMIT_PER_HOUR` (default 25, set `9999` to bypass locally), `IP_SALT_BASE`, `ENABLE_TONE_CHECK` (set `false` to skip Haiku tone check)
+**Backend**: `ANTHROPIC_API_KEY` (NEVER exposed), `ANTHROPIC_MODEL_GEN` (default `claude-sonnet-4-6`), `ANTHROPIC_MODEL_SAFETY` (default `claude-haiku-4-5`), `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (newlines escaped as `\\n`), `FIREBASE_STORAGE_BUCKET`, `RATE_LIMIT_PER_HOUR` (default 25, set `9999` to bypass locally), `IP_SALT_BASE`, `ENABLE_TONE_CHECK` (set `false` to skip Haiku tone check), `ALLOWED_ORIGINS` (comma-separated browser-Origin allowlist for the CSRF shield in `generate.ts`; **unset = no-op**, so it MUST be set in production deploys e.g. `https://blessyourheart.app`)
 
 See [`.env.example`](.env.example) for the canonical template.
 
@@ -107,20 +107,24 @@ See [`.env.example`](.env.example) for the canonical template.
 
 - **Single endpoint**: `POST /.netlify/functions/generate`
 - **Filter pipeline (cost-ordered, `netlify/functions/generate.ts`)**:
-  1. Method/Zod validation
-  2. Rate-limit check (Firestore txn, 3s timeout, fails open on error)
-  3. Slur word-list (free)
-  4. Real-person regex (free; `PUBLIC_FIGURES` array currently empty)
-  5. Distress phrase list (free, server-only)
-  6. Distress Haiku classifier (only if phrase list misses)
-  7. Generation loop: Sonnet → Zod parse → specificity (lexical) → tone (Haiku) — up to 2 retries
-  8. Photo selection (3-rung fallback)
-  9. Safe fallback if generation/selection both fail
-- **NEVER log prompt or output content** — log only event types: `gen_ok`, `gen_block`, `gen_distress`, `gen_rate_limited`, `gen_retry`, `gen_safe_fallback`, `gen_anthropic_error`, `rate_limit_check_failed`, `tone_check_failed`, `distress_check_failed`
+  1. Method check (POST only — others return `405`)
+  2. **Origin allowlist** (CSRF shield via `ALLOWED_ORIGINS` — see below)
+  3. Zod validation of body
+  4. Rate-limit check (Firestore txn, 3s timeout, fails open on error)
+  5. Slur word-list (free)
+  6. Real-person regex (free; `PUBLIC_FIGURES` array currently empty)
+  7. Distress phrase list (free, server-only)
+  8. Distress Haiku classifier (only if phrase list misses)
+  9. Generation loop: Sonnet → Zod parse → specificity (lexical) → tone (Haiku) — up to 2 retries
+  10. Photo selection (3-rung fallback)
+  11. Safe fallback if generation/selection both fail
+- **CSRF Origin shield** (`isOriginAllowed` in [`generate.ts`](netlify/functions/generate.ts)): when `ALLOWED_ORIGINS` env var is set (comma-separated origins), browser POSTs whose `Origin` header is not in the list get `403 { status: 'error' }`. Unset = no-op (back-compat). Missing Origin = pass-through (server-to-server clients omit it). Origins are compared case-insensitively. **Do not remove this guard or default it to deny** — it's the only protection against cross-origin Anthropic-spend abuse. Behavior pinned by `contract — Origin allowlist (CSRF shield)` block in [`tests/server/generate-contract.test.ts`](tests/server/generate-contract.test.ts)
+- **NEVER log prompt or output content** — log only event types: `gen_ok`, `gen_block` (with `reason: 'slur' | 'real-person' | 'origin'`), `gen_distress`, `gen_rate_limited`, `gen_retry`, `gen_safe_fallback`, `gen_anthropic_error`, `rate_limit_check_failed`, `tone_check_failed`, `distress_check_failed`
 - **Rate limit**: 25/hour per IP, hashed with daily-rotated salt (`IP_SALT_BASE:YYYY-MM-DD`), SHA-256 truncated to 32 chars, stored at `rateLimits/{hashedIp}` with `expiresAt` for TTL. Handler emits `X-RateLimit-Limit/Remaining/Reset` on every response where the limiter ran (intentionally absent on bypass and fail-open paths) plus `Retry-After` on `rate_limited`. `retryAfterSec` is computed from `windowStart + 1hr - now`, NOT a hardcoded value
 - **Retry budget = 2** — on exhaustion, ship a `safe_fallback` from [`fallbacks.ts`](src/server/fallbacks.ts). User NEVER sees raw error
 - **Local dev bypass**: set `RATE_LIMIT_PER_HOUR=9999` (skips entire rate-limit block)
 - **Tone check bypass**: set `ENABLE_TONE_CHECK=false` (returns true unconditionally)
+- **Response security headers** ([`netlify.toml`](netlify.toml)): `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`, `Strict-Transport-Security: max-age=31536000; includeSubDomains` (no `preload` until ready to submit), `Cross-Origin-Opener-Policy: same-origin`, and a **Report-Only** CSP. The CSP allows `self`, PostHog, Firebase Storage, and `data:`/`blob:` for canvas downloads; `style-src` keeps `'unsafe-inline'` for shadcn/Radix runtime style injection. Promote CSP from `Content-Security-Policy-Report-Only` to enforced after a production observation window. **Do not remove these headers** when restructuring `netlify.toml`
 
 ### The Two-Line Contract (Non-Negotiable)
 
@@ -172,8 +176,15 @@ Brand tokens (colors, typography scale, animation tokens): [design-system.md](.c
 
 ### Adding an API Field, Endpoint, or Response Variant
 1. Read [`docs/API_DESIGN_GUIDE.md`](docs/API_DESIGN_GUIDE.md) — codifies URL/field naming, status code policy, error shape, validation, rate-limit headers, and includes recipes
-2. The wrapper pattern is **always-200 with body `status` discriminator** — don't introduce `429` for `rate_limited` or `403` for `blocked`. The SPA only narrows on `body.status`; pinned by [`tests/server/generate-contract.test.ts`](tests/server/generate-contract.test.ts)
+2. The wrapper pattern is **always-200 with body `status` discriminator** for *business outcomes* (rate_limited, blocked, distress, ok, safe_fallback, error). Don't introduce `429` for `rate_limited` or `403` for `blocked`. The SPA only narrows on `body.status`. Two exceptions are **connection-level rejections** that never reach the business pipeline: `405` for non-POST method, `403` for Origin-allowlist failure (CSRF shield). Both pinned by [`tests/server/generate-contract.test.ts`](tests/server/generate-contract.test.ts)
 3. Update `GenerateResponse` in [`src/types/index.ts`](src/types/index.ts) AND the mirrored Zod schema in `generate-contract.test.ts` together — they're load-bearing
+
+### Rendering a Server-Provided URL or Phone in the UI
+The hotline payload from `/generate` is the only server-controlled URL/phone we render today, and [`src/components/DistressInterstitial.tsx`](src/components/DistressInterstitial.tsx) sanitizes both before they hit the DOM:
+- `safeTelHref(rawPhone)` allows only dial-pad characters (`+`, digits, `()`, `-`); anything else returns `null` and the link is suppressed
+- `safeHotlineHref(rawUrl)` parses with `URL()` and accepts `https:` only — falls back to `https://findahelpline.com` on parse error or non-HTTPS scheme
+
+When adding any new server-provided URL to the UI, mirror this pattern (parse + scheme-allowlist) rather than passing strings into `href` raw — even if the server is the only writer. Defense-in-depth here costs ~10 lines per consumer and is the last line before tabnabbing / `javascript:` injection.
 
 ---
 
