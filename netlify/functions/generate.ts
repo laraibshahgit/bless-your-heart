@@ -18,6 +18,9 @@ const RequestSchema = z.object({
 const typedPhotos = photos as Photo[];
 const anthropic = getAnthropicClient();
 
+const RATE_LIMIT_TIMEOUT_MS = 3000;
+const MAX_RETRIES = 2;
+
 const baseHeaders = {
   'Content-Type': 'application/json; charset=utf-8',
   'Cache-Control': 'no-store',
@@ -140,7 +143,7 @@ const handler: Handler = async (event: HandlerEvent) => {
       const { checkAndIncrementRateLimit } = await import('../../src/server/rateLimit');
       rateResult = await Promise.race([
         checkAndIncrementRateLimit(hashedIp),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('rate limit timeout')), 3000)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('rate limit timeout')), RATE_LIMIT_TIMEOUT_MS)),
       ]);
       if (!rateResult.allowed) {
         console.log(JSON.stringify({ event: 'gen_rate_limited', hashedIp }));
@@ -203,7 +206,6 @@ const handler: Handler = async (event: HandlerEvent) => {
     );
   }
 
-  const MAX_RETRIES = 2;
   let lastOutput = null;
   let retries = 0;
 
