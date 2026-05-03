@@ -178,6 +178,17 @@ gen_anthropic_error, rate_limit_check_failed, tone_check_failed, distress_check_
 
 When adding a new code path, add a new `event` value and document it here. Reuse existing values where the semantics match.
 
+**Fail-open / fail-closed catches**: any `console.error` in a `try/catch` that *swallows* the error (returns a default and continues) MUST capture the cause:
+
+```ts
+} catch (err) {
+  console.error(JSON.stringify({ event: 'foo_failed', error: String(err) }));
+  return defaultValue;
+}
+```
+
+Without `error: String(err)` the on-call has only the event name and no way to distinguish a Firestore timeout from a credential error from a SDK bug. The four existing fail-open events (`gen_anthropic_error`, `rate_limit_check_failed`, `tone_check_failed`, `distress_check_failed`) all follow this pattern. New fail-open paths must too. (Reinforced by audit run 13/001, which closed two gaps where the catch had been written without binding `err`.)
+
 ---
 
 ## Security
