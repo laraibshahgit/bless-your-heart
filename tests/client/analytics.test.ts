@@ -62,9 +62,20 @@ describe('initAnalytics', () => {
     vi.stubEnv('VITE_POSTHOG_KEY', 'phc_real_key');
     const { initAnalytics } = await import('@/lib/analytics');
     initAnalytics();
-    // Simulate the loaded callback firing
-    const opts = initMock.mock.calls[0][1];
-    opts.loaded?.();
+    initAnalytics();
+    expect(initMock).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression test for audit run 30/001 — the pre-fix shape only set
+  // `initialized = true` inside the async `loaded` callback, leaving a window
+  // where a re-entrant call (e.g. from a future useEffect under StrictMode's
+  // double-mount) would pass the guard and call posthog.init() twice. Even
+  // with no `loaded` callback simulated, the synchronous flip must hold.
+  it('does not double-init when called twice synchronously without simulating posthog load', async () => {
+    vi.stubEnv('PROD', true as any);
+    vi.stubEnv('VITE_POSTHOG_KEY', 'phc_real_key');
+    const { initAnalytics } = await import('@/lib/analytics');
+    initAnalytics();
     initAnalytics();
     expect(initMock).toHaveBeenCalledTimes(1);
   });
@@ -83,9 +94,6 @@ describe('track', () => {
     vi.stubEnv('VITE_POSTHOG_KEY', 'phc_real_key');
     const { initAnalytics, track } = await import('@/lib/analytics');
     initAnalytics();
-    // Trigger the loaded callback to set initialized=true
-    const opts = initMock.mock.calls[0][1];
-    opts.loaded?.();
 
     track('prompt_submitted', { source: 'preset', length: 12 });
     expect(captureMock).toHaveBeenCalledWith('prompt_submitted', { source: 'preset', length: 12 });
@@ -96,8 +104,6 @@ describe('track', () => {
     vi.stubEnv('VITE_POSTHOG_KEY', 'phc_real_key');
     const { initAnalytics, track } = await import('@/lib/analytics');
     initAnalytics();
-    const opts = initMock.mock.calls[0][1];
-    opts.loaded?.();
 
     track('plain_event');
     expect(captureMock).toHaveBeenCalledWith('plain_event', undefined);
