@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { generateLines, checkTone, getAnthropicClient, VOICE_SYSTEM_PROMPT } from '@/server/anthropic';
+import { generateLines, checkTone, getAnthropicClient, VOICE_SYSTEM_PROMPT, ANTHROPIC_REQUEST_TIMEOUT_MS } from '@/server/anthropic';
 
 type MockResponse = {
   content: Array<{ type: string; text?: string }>;
@@ -118,6 +118,18 @@ describe('generateLines', () => {
 
     await expect(generateLines(anthropic, 'work')).rejects.toThrow('boom');
   });
+
+  // Timeout contract: every Anthropic call passes an explicit per-request
+  // timeout (second arg to messages.create) so the SDK does NOT inherit its
+  // 10-minute default. The Netlify lambda kills at ~10–26s; without this cap
+  // a hung provider would burn the entire budget on one stuck request and
+  // the retry loop would never get a second attempt. See `audit-reports/20`.
+  it('passes ANTHROPIC_REQUEST_TIMEOUT_MS as the per-request timeout', async () => {
+    const anthropic = makeAnthropic({ content: [{ type: 'text', text: '' }] });
+    await generateLines(anthropic, 'work');
+    const opts = anthropic.messages.create.mock.calls[0][1];
+    expect(opts).toEqual({ timeout: ANTHROPIC_REQUEST_TIMEOUT_MS });
+  });
 });
 
 describe('checkTone', () => {
@@ -209,5 +221,13 @@ describe('checkTone', () => {
     const anthropic = makeAnthropic({ content: [{ type: 'text', text: 'safe' }] });
     await checkTone(anthropic, 'work', 'x');
     expect(anthropic.messages.create.mock.calls[0][0].temperature).toBe(0);
+  });
+
+  // Same per-request timeout contract as generateLines — see comment there.
+  it('passes ANTHROPIC_REQUEST_TIMEOUT_MS as the per-request timeout', async () => {
+    const anthropic = makeAnthropic({ content: [{ type: 'text', text: 'safe' }] });
+    await checkTone(anthropic, 'work', 'x');
+    const opts = anthropic.messages.create.mock.calls[0][1];
+    expect(opts).toEqual({ timeout: ANTHROPIC_REQUEST_TIMEOUT_MS });
   });
 });

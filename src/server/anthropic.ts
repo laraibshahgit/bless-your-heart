@@ -18,6 +18,16 @@ const GENERATION_TEMPERATURE = 0.9;
 export const SAFETY_MAX_TOKENS = 10;
 export const SAFETY_TEMPERATURE = 0;
 
+// Per-request timeout for every Anthropic SDK call (generation + safety).
+// The SDK default is 10 minutes, which is dangerous in a serverless context:
+// a hung provider would tie up the lambda until Netlify kills it (10s default,
+// 26s max on the free tier), wasting the entire budget on one stuck request.
+// 12 seconds gives the retry loop ~2 attempts inside a 26s lambda budget
+// (worst case: 12s gen + 10s tone-check + 4s margin) while failing fast under
+// provider degradation. Exported so safety.ts uses the same value — single
+// source of truth for the request-level cap.
+export const ANTHROPIC_REQUEST_TIMEOUT_MS = 12_000;
+
 let client: Anthropic | null = null;
 
 export function getAnthropicClient(): Anthropic {
@@ -78,13 +88,16 @@ export async function generateLines(
   anthropic: Anthropic,
   prompt: string
 ): Promise<string> {
-  const response = await anthropic.messages.create({
-    model: process.env.ANTHROPIC_MODEL_GEN ?? 'claude-sonnet-4-6',
-    max_tokens: GENERATION_MAX_TOKENS,
-    temperature: GENERATION_TEMPERATURE,
-    system: VOICE_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: prompt }],
-  });
+  const response = await anthropic.messages.create(
+    {
+      model: process.env.ANTHROPIC_MODEL_GEN ?? 'claude-sonnet-4-6',
+      max_tokens: GENERATION_MAX_TOKENS,
+      temperature: GENERATION_TEMPERATURE,
+      system: VOICE_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }],
+    },
+    { timeout: ANTHROPIC_REQUEST_TIMEOUT_MS }
+  );
 
   return response.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -118,16 +131,19 @@ export async function checkTone(
   if (process.env.ENABLE_TONE_CHECK === 'false') return true;
 
   try {
-    const response = await anthropic.messages.create({
-      model: process.env.ANTHROPIC_MODEL_SAFETY ?? 'claude-haiku-4-5',
-      max_tokens: SAFETY_MAX_TOKENS,
-      temperature: SAFETY_TEMPERATURE,
-      system: TONE_CHECK_PROMPT,
-      messages: [{
-        role: 'user',
-        content: `User input: "${prompt}"\nGenerated line 2: "${line2}"`,
-      }],
-    });
+    const response = await anthropic.messages.create(
+      {
+        model: process.env.ANTHROPIC_MODEL_SAFETY ?? 'claude-haiku-4-5',
+        max_tokens: SAFETY_MAX_TOKENS,
+        temperature: SAFETY_TEMPERATURE,
+        system: TONE_CHECK_PROMPT,
+        messages: [{
+          role: 'user',
+          content: `User input: "${prompt}"\nGenerated line 2: "${line2}"`,
+        }],
+      },
+      { timeout: ANTHROPIC_REQUEST_TIMEOUT_MS }
+    );
 
     const verdict = response.content[0].type === 'text'
       ? response.content[0].text.trim().toLowerCase()

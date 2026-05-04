@@ -10,6 +10,7 @@ import {
   checkDistressPhraseList,
   checkDistressWithHaiku,
 } from '@/server/safety';
+import { ANTHROPIC_REQUEST_TIMEOUT_MS } from '@/server/anthropic';
 
 describe('checkSlurFilter (extended)', () => {
   it('matches a slur as a whole word', () => {
@@ -179,5 +180,16 @@ describe('checkDistressWithHaiku', () => {
     const anthropic = makeAnthropic('ok');
     await checkDistressWithHaiku(anthropic, 'x');
     expect(anthropic.messages.create.mock.calls[0][0].temperature).toBe(0);
+  });
+
+  // Per-request timeout contract — see anthropic.test.ts for rationale.
+  // The distress check is the riskiest path to leave SDK-default-timeout: it
+  // runs BEFORE generation, so a hung Haiku call would block every request
+  // (incl. the safe ones) for the full 10-minute SDK default if not bounded.
+  it('passes ANTHROPIC_REQUEST_TIMEOUT_MS as the per-request timeout', async () => {
+    const anthropic = makeAnthropic('ok');
+    await checkDistressWithHaiku(anthropic, 'x');
+    const opts = anthropic.messages.create.mock.calls[0][1];
+    expect(opts).toEqual({ timeout: ANTHROPIC_REQUEST_TIMEOUT_MS });
   });
 });

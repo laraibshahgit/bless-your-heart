@@ -10,9 +10,17 @@ import { safeFallbacks } from '../../src/server/fallbacks';
 import photos from '../../src/data/photos.json';
 import type { Photo, GenerateResponse, RateLimitResult } from '../../src/types';
 
+// Photo library is currently 10 entries (src/data/photos.json). 50 is generous
+// for any session and bounds attacker-controlled array length — without it,
+// a malicious client could send a multi-MB array of strings and force the
+// function to JSON-parse + Zod-validate the whole payload before hitting
+// any business logic. Netlify caps the request body at 6MB, so this is a
+// belt-and-suspenders defense, but cheaper to enforce than to argue about.
+const MAX_EXCLUDE_PHOTO_IDS = 50;
+
 const RequestSchema = z.object({
   prompt: z.string().trim().min(1).max(200),
-  excludePhotoIds: z.array(z.string()).default([]),
+  excludePhotoIds: z.array(z.string()).max(MAX_EXCLUDE_PHOTO_IDS).default([]),
 });
 
 const typedPhotos = photos as Photo[];

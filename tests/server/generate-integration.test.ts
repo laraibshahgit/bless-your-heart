@@ -20,9 +20,15 @@ vi.mock('@anthropic-ai/sdk', () => {
   };
 });
 
+// Mirrors the stable-Timestamp shape in tests/server/rateLimit-extended.test.ts
+// — Date.now() is captured once at construction, not re-read on every
+// .toMillis() call, to keep TTL math deterministic across closely-spaced reads.
 vi.mock('firebase-admin/firestore', () => {
   const Timestamp = {
-    now: () => ({ toMillis: () => Date.now() }),
+    now: () => {
+      const ms = Date.now();
+      return { toMillis: () => ms };
+    },
     fromMillis: (ms: number) => ({ toMillis: () => ms }),
   };
   return { Timestamp };

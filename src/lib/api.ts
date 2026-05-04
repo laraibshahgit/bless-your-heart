@@ -1,6 +1,15 @@
 import type { GenerateRequest, GenerateResponse } from '@/types';
 import { errorCopy } from '@/content/copy';
 
+// Outer cap on the round-trip to /generate. The Netlify function itself kills
+// at 10s default / 26s max, so under normal failure the user sees a 5xx well
+// before this fires. The signal exists for the rare case where headers arrive
+// but the response body never closes (CDN edge weirdness, lambda crash mid-
+// stream). 30s gives the lambda + cold-start + DNS budget room to win
+// legitimately while capping the worst case so a stuck tab fails into the
+// retry copy in errorCopy.generation.unknown rather than hanging forever.
+const GENERATE_FETCH_TIMEOUT_MS = 30_000;
+
 export async function callGenerate(
   prompt: string,
   excludePhotoIds: string[]
@@ -10,6 +19,7 @@ export async function callGenerate(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt, excludePhotoIds } satisfies GenerateRequest),
+      signal: AbortSignal.timeout(GENERATE_FETCH_TIMEOUT_MS),
     });
 
     if (!response.ok) {

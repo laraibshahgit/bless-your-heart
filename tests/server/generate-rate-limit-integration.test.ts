@@ -42,9 +42,15 @@ vi.mock('@anthropic-ai/sdk', () => ({
   },
 }));
 
+// Stable Timestamp.now() — captures Date.now() at construction so .toMillis()
+// returns the same value on repeated reads (matches the shape used in
+// rateLimit-extended.test.ts to avoid 1ms-drift TTL flakes).
 vi.mock('firebase-admin/firestore', () => ({
   Timestamp: {
-    now: () => ({ toMillis: () => Date.now() }),
+    now: () => {
+      const ms = Date.now();
+      return { toMillis: () => ms };
+    },
     fromMillis: (ms: number) => ({ toMillis: () => ms }),
   },
 }));

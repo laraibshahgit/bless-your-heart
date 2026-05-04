@@ -1,11 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock the Firestore Timestamp helpers — the rateLimit module uses them via firebase-admin/firestore
+// Mock the Firestore Timestamp helpers — the rateLimit module uses them via firebase-admin/firestore.
+// Important: capture Date.now() ONCE per Timestamp.now() call. Earlier shape was
+// `now: () => ({ toMillis: () => Date.now() })` which re-read the wall clock on
+// every `.toMillis()` invocation. The TTL-contract assertions read
+// `written.windowStart.toMillis()` after `written.expiresAt.toMillis()`; if a
+// millisecond ticked between those two reads, `expiresAt - windowStart` came
+// back as 3599999 instead of 3600000 and the test failed once every ~5 runs.
 vi.mock('firebase-admin/firestore', () => {
   const Timestamp = {
-    now: () => ({
-      toMillis: () => Date.now(),
-    }),
+    now: () => {
+      const ms = Date.now();
+      return { toMillis: () => ms };
+    },
     fromMillis: (ms: number) => ({
       toMillis: () => ms,
     }),

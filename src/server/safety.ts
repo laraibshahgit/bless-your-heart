@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { distressPhrases } from './distress-phrases';
 import { slurList } from './slur-list';
-import { SAFETY_MAX_TOKENS, SAFETY_TEMPERATURE } from './anthropic';
+import { SAFETY_MAX_TOKENS, SAFETY_TEMPERATURE, ANTHROPIC_REQUEST_TIMEOUT_MS } from './anthropic';
 
 export function checkSlurFilter(prompt: string): boolean {
   const normalized = prompt.toLowerCase();
@@ -53,13 +53,16 @@ export async function checkDistressWithHaiku(
   prompt: string
 ): Promise<boolean> {
   try {
-    const response = await anthropic.messages.create({
-      model: process.env.ANTHROPIC_MODEL_SAFETY ?? 'claude-haiku-4-5',
-      max_tokens: SAFETY_MAX_TOKENS,
-      temperature: SAFETY_TEMPERATURE,
-      system: DISTRESS_CHECK_PROMPT,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const response = await anthropic.messages.create(
+      {
+        model: process.env.ANTHROPIC_MODEL_SAFETY ?? 'claude-haiku-4-5',
+        max_tokens: SAFETY_MAX_TOKENS,
+        temperature: SAFETY_TEMPERATURE,
+        system: DISTRESS_CHECK_PROMPT,
+        messages: [{ role: 'user', content: prompt }],
+      },
+      { timeout: ANTHROPIC_REQUEST_TIMEOUT_MS }
+    );
 
     const verdict = response.content[0].type === 'text'
       ? response.content[0].text.trim().toLowerCase()

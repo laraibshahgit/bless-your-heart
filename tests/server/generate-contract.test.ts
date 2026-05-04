@@ -338,6 +338,25 @@ describe('contract — request validation', () => {
     expect((result as any).statusCode).toBe(400);
   });
 
+  // Bound on excludePhotoIds array length — defends the function from
+  // attacker-controlled multi-MB array payloads (cheaper than relying on
+  // Netlify's 6MB body cap alone). Photo library is currently 10 entries;
+  // 50 is generous for legitimate sessions. See `audit-reports/20`.
+  it('accepts excludePhotoIds at exactly 50 entries (boundary, allowed)', async () => {
+    mockHaikuReply('ok');
+    mockSonnetReply('The morning holds quiet possibility.', 'Coffee is the bravest part of it.');
+    const exact50 = Array.from({ length: 50 }, (_, i) => `photo-${i}`);
+    const result = await callHandler({ prompt: 'morning coffee', excludePhotoIds: exact50 });
+    expect((result as any).statusCode).toBe(200);
+  });
+
+  it('rejects excludePhotoIds at 51 entries (just over the boundary)', async () => {
+    const exact51 = Array.from({ length: 51 }, (_, i) => `photo-${i}`);
+    const result = await callHandler({ prompt: 'morning coffee', excludePhotoIds: exact51 });
+    expect((result as any).statusCode).toBe(400);
+    ErrorResponseSchema.parse(JSON.parse((result as any).body));
+  });
+
   it('rejects when prompt is null', async () => {
     const result = await callHandler({ prompt: null, excludePhotoIds: [] });
     expect((result as any).statusCode).toBe(400);
