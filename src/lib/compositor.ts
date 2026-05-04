@@ -1,8 +1,21 @@
 import type { Photo } from '@/types';
 import { ensureFontsReady } from './fonts';
-
-const LOGICAL_SIZE = 1080;
-const PADDING = 24;
+import {
+  POSTER_LOGICAL_SIZE_PX,
+  TEXT_ZONE_PADDING_PX,
+  WATERMARK_PADDING_PX,
+  LINE1_FONT_PX,
+  LINE2_FONT_PX,
+  WATERMARK_FONT_PX,
+  LINE1_LINE_HEIGHT_RATIO,
+  LINE_GAP_PX,
+  LETTER_SPACING_LINE1,
+  LETTER_SPACING_LINE2,
+  LETTER_SPACING_WATERMARK,
+  WATERMARK_OPACITY,
+  MIN_FIT_SCALE,
+  WATERMARK_TEXT,
+} from './poster-layout';
 
 function setLetterSpacing(ctx: CanvasRenderingContext2D, value: string): void {
   if ('letterSpacing' in ctx) {
@@ -29,8 +42,8 @@ interface CompositeOptions {
 
 export function setupCanvas(canvas: HTMLCanvasElement, displaySize: number): CanvasRenderingContext2D {
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = LOGICAL_SIZE * dpr;
-  canvas.height = LOGICAL_SIZE * dpr;
+  canvas.width = POSTER_LOGICAL_SIZE_PX * dpr;
+  canvas.height = POSTER_LOGICAL_SIZE_PX * dpr;
   canvas.style.width = `${displaySize}px`;
   canvas.style.height = `${displaySize}px`;
 
@@ -48,30 +61,30 @@ export function composite({ canvas, img, photo, line1, line2, scale = 1 }: Compo
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  ctx.clearRect(0, 0, LOGICAL_SIZE, LOGICAL_SIZE);
+  ctx.clearRect(0, 0, POSTER_LOGICAL_SIZE_PX, POSTER_LOGICAL_SIZE_PX);
 
-  ctx.drawImage(img, 0, 0, LOGICAL_SIZE, LOGICAL_SIZE);
+  ctx.drawImage(img, 0, 0, POSTER_LOGICAL_SIZE_PX, POSTER_LOGICAL_SIZE_PX);
 
   const fillColor = photo.textColor === 'white' ? '#FFFFFF' : '#1A1612';
   ctx.fillStyle = fillColor;
 
-  const zoneX = photo.textZone.x * LOGICAL_SIZE;
-  const zoneY = photo.textZone.y * LOGICAL_SIZE;
-  const zoneW = photo.textZone.width * LOGICAL_SIZE;
+  const zoneX = photo.textZone.x * POSTER_LOGICAL_SIZE_PX;
+  const zoneY = photo.textZone.y * POSTER_LOGICAL_SIZE_PX;
+  const zoneW = photo.textZone.width * POSTER_LOGICAL_SIZE_PX;
   const centerX = zoneX + zoneW / 2;
 
-  const line1Size = Math.round(64 * scale);
+  const line1Size = Math.round(LINE1_FONT_PX * scale);
   ctx.font = `500 ${line1Size}px "Cormorant Garamond"`;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'center';
-  setLetterSpacing(ctx, '0.02em');
-  const line1Y = zoneY + PADDING;
+  setLetterSpacing(ctx, LETTER_SPACING_LINE1);
+  const line1Y = zoneY + TEXT_ZONE_PADDING_PX;
   ctx.fillText(line1, centerX, line1Y);
 
-  const line2Size = Math.round(44 * scale);
+  const line2Size = Math.round(LINE2_FONT_PX * scale);
   ctx.font = `italic 400 ${line2Size}px "Cormorant Garamond"`;
-  setLetterSpacing(ctx, '0.01em');
-  const line2Y = line1Y + line1Size * 1.15 + 16;
+  setLetterSpacing(ctx, LETTER_SPACING_LINE2);
+  const line2Y = line1Y + line1Size * LINE1_LINE_HEIGHT_RATIO + LINE_GAP_PX;
   ctx.fillText(line2, centerX, line2Y);
 
   drawWatermark(ctx, photo);
@@ -80,34 +93,33 @@ export function composite({ canvas, img, photo, line1, line2, scale = 1 }: Compo
 }
 
 function drawWatermark(ctx: CanvasRenderingContext2D, photo: Photo): void {
-  const text = 'Bless Your Heart';
-  const padding = 32;
-
-  ctx.font = '400 18px "Cormorant Garamond"';
-  setLetterSpacing(ctx, '0.04em');
+  ctx.font = `400 ${WATERMARK_FONT_PX}px "Cormorant Garamond"`;
+  setLetterSpacing(ctx, LETTER_SPACING_WATERMARK);
   ctx.fillStyle = photo.textColor === 'white' ? '#FFFFFF' : '#1A1612';
-  ctx.globalAlpha = 0.85;
+  ctx.globalAlpha = WATERMARK_OPACITY;
+
+  const farEdge = POSTER_LOGICAL_SIZE_PX - WATERMARK_PADDING_PX;
 
   switch (photo.watermarkPosition) {
     case 'lower-left':
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText(text, padding, LOGICAL_SIZE - padding);
+      ctx.fillText(WATERMARK_TEXT, WATERMARK_PADDING_PX, farEdge);
       break;
     case 'lower-right':
       ctx.textAlign = 'right';
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText(text, LOGICAL_SIZE - padding, LOGICAL_SIZE - padding);
+      ctx.fillText(WATERMARK_TEXT, farEdge, farEdge);
       break;
     case 'upper-left':
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.fillText(text, padding, padding);
+      ctx.fillText(WATERMARK_TEXT, WATERMARK_PADDING_PX, WATERMARK_PADDING_PX);
       break;
     case 'upper-right':
       ctx.textAlign = 'right';
       ctx.textBaseline = 'top';
-      ctx.fillText(text, LOGICAL_SIZE - padding, padding);
+      ctx.fillText(WATERMARK_TEXT, farEdge, WATERMARK_PADDING_PX);
       break;
   }
 
@@ -132,21 +144,21 @@ export async function checkFit(
   const offscreen = document.createElement('canvas');
   const ctx = offscreen.getContext('2d')!;
 
-  const usable = photo.textZone.width * LOGICAL_SIZE - 2 * PADDING;
+  const usable = photo.textZone.width * POSTER_LOGICAL_SIZE_PX - 2 * TEXT_ZONE_PADDING_PX;
 
-  ctx.font = '500 64px "Cormorant Garamond"';
-  setLetterSpacing(ctx, '0.02em');
+  ctx.font = `500 ${LINE1_FONT_PX}px "Cormorant Garamond"`;
+  setLetterSpacing(ctx, LETTER_SPACING_LINE1);
   const line1Width = ctx.measureText(line1).width;
 
-  ctx.font = 'italic 400 44px "Cormorant Garamond"';
-  setLetterSpacing(ctx, '0.01em');
+  ctx.font = `italic 400 ${LINE2_FONT_PX}px "Cormorant Garamond"`;
+  setLetterSpacing(ctx, LETTER_SPACING_LINE2);
   const line2Width = ctx.measureText(line2).width;
 
   const line1Scale = line1Width <= usable ? 1 : usable / line1Width;
   const line2Scale = line2Width <= usable ? 1 : usable / line2Width;
   const minScale = Math.min(line1Scale, line2Scale);
 
-  if (minScale >= 0.6) {
+  if (minScale >= MIN_FIT_SCALE) {
     return { ok: true, scale: minScale };
   }
 

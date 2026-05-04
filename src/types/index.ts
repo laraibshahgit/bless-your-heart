@@ -1,3 +1,13 @@
+// ── Limits shared by client + server ──
+
+// Max user-prompt length. Enforced server-side by the Zod request schema in
+// `netlify/functions/generate.ts` (security boundary) and mirrored client-side
+// as the `<input maxLength>` in `src/components/PromptInput.tsx` (UX). Drift
+// between the two would let the input accept characters the API will then 400.
+// Pinned by the boundary tests in `tests/server/generate-contract.test.ts`
+// ("accepts prompt at exactly 200 chars" / "rejects 201").
+export const MAX_PROMPT_LENGTH = 200;
+
 // ── Photo Metadata ──
 
 export interface TextZone {

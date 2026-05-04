@@ -8,7 +8,7 @@ import { selectPhoto } from '../../src/server/photoSelection';
 import { getHotlineForCountry } from '../../src/server/hotlines';
 import { safeFallbacks } from '../../src/server/fallbacks';
 import photos from '../../src/data/photos.json';
-import type { Photo, GenerateResponse, RateLimitResult } from '../../src/types';
+import { MAX_PROMPT_LENGTH, type Photo, type GenerateResponse, type RateLimitResult } from '../../src/types';
 
 // Photo library is currently 10 entries (src/data/photos.json). 50 is generous
 // for any session and bounds attacker-controlled array length — without it,
@@ -19,7 +19,7 @@ import type { Photo, GenerateResponse, RateLimitResult } from '../../src/types';
 const MAX_EXCLUDE_PHOTO_IDS = 50;
 
 const RequestSchema = z.object({
-  prompt: z.string().trim().min(1).max(200),
+  prompt: z.string().trim().min(1).max(MAX_PROMPT_LENGTH),
   excludePhotoIds: z.array(z.string()).max(MAX_EXCLUDE_PHOTO_IDS).default([]),
 });
 
