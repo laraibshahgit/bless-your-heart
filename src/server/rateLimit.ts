@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { getDb } from './firebaseAdmin';
 import { Timestamp } from 'firebase-admin/firestore';
-import type { RateLimitResult } from '@/types';
+import type { RateLimitDoc, RateLimitResult } from '@/types';
 
 const COLLECTION = 'rateLimits';
 
@@ -59,7 +59,26 @@ export async function checkAndIncrementRateLimit(hashedIp: string): Promise<Rate
       };
     }
 
-    const data = snap.data()!;
+    // `snap.exists` is false above, so `snap.data()` returns the stored doc.
+    // Type as RateLimitDoc to keep field shape (count/windowStart/expiresAt)
+    // aligned with the source of truth in src/types/index.ts.
+    const data = snap.data() as RateLimitDoc | undefined;
+    if (!data) {
+      // Treat the unreachable case as "first hit in window" so we never throw
+      // through the transaction boundary.
+      tx.set(docRef, {
+        count: 1,
+        windowStart: now,
+        expiresAt: Timestamp.fromMillis(nowMs + RATE_LIMIT_WINDOW_MS),
+      });
+      return {
+        allowed: true,
+        remaining: limit - 1,
+        limit,
+        resetAt: Math.floor((nowMs + RATE_LIMIT_WINDOW_MS) / 1000),
+      };
+    }
+
     const windowAge = nowMs - data.windowStart.toMillis();
 
     if (windowAge > RATE_LIMIT_WINDOW_MS) {

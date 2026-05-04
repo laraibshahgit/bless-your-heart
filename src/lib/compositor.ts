@@ -18,9 +18,27 @@ import {
 } from './poster-layout';
 
 function setLetterSpacing(ctx: CanvasRenderingContext2D, value: string): void {
+  // CanvasRenderingContext2D.letterSpacing is a relatively recent addition
+  // (Chromium 99, Safari 16.4) and TS lib.dom may not include it depending
+  // on the consumer's lib target. Cast through unknown to set the property
+  // when available, no-op when not — graceful degradation.
   if ('letterSpacing' in ctx) {
     (ctx as unknown as { letterSpacing: string }).letterSpacing = value;
   }
+}
+
+// `getContext('2d')` returns null only on canvases that have already had
+// a different context type acquired, or on user agents that disabled 2D
+// (vanishingly rare). All consumers of the helpers below construct a fresh
+// canvas, so a null return is unrecoverable — throw with a descriptive
+// message rather than letting a `!`-suppressed null propagate as a confusing
+// "Cannot read properties of null (reading 'fillText')" stack later.
+function require2dContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Failed to acquire 2D canvas context');
+  }
+  return ctx;
 }
 
 export async function loadImage(url: string): Promise<HTMLImageElement> {
@@ -47,7 +65,7 @@ export function setupCanvas(canvas: HTMLCanvasElement, displaySize: number): Can
   canvas.style.width = `${displaySize}px`;
   canvas.style.height = `${displaySize}px`;
 
-  const ctx = canvas.getContext('2d')!;
+  const ctx = require2dContext(canvas);
   ctx.scale(dpr, dpr);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
@@ -55,7 +73,7 @@ export function setupCanvas(canvas: HTMLCanvasElement, displaySize: number): Can
 }
 
 export function composite({ canvas, img, photo, line1, line2, scale = 1 }: CompositeOptions): void {
-  const ctx = canvas.getContext('2d')!;
+  const ctx = require2dContext(canvas);
   const dpr = window.devicePixelRatio || 1;
 
   ctx.save();
@@ -142,7 +160,7 @@ export async function checkFit(
   await ensureFontsReady();
 
   const offscreen = document.createElement('canvas');
-  const ctx = offscreen.getContext('2d')!;
+  const ctx = require2dContext(offscreen);
 
   const usable = photo.textZone.width * POSTER_LOGICAL_SIZE_PX - 2 * TEXT_ZONE_PADDING_PX;
 

@@ -166,6 +166,11 @@ describe('checkTone', () => {
     expect(await checkTone(anthropic, 'work', 'x')).toBe(true);
   });
 
+  it('treats empty content array as "safe" (no out-of-bounds throw)', async () => {
+    const anthropic = makeAnthropic({ content: [] });
+    expect(await checkTone(anthropic, 'work', 'x')).toBe(true);
+  });
+
   it('returns true when ENABLE_TONE_CHECK is exactly "false" (skip path)', async () => {
     process.env.ENABLE_TONE_CHECK = 'false';
     const anthropic = makeAnthropic({ content: [{ type: 'text', text: 'user' }] });

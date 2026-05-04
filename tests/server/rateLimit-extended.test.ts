@@ -420,6 +420,21 @@ describe('checkAndIncrementRateLimit', () => {
     expect(mockTx.set).not.toHaveBeenCalled();
   });
 
+  // Defensive: snap.exists could be true while snap.data() returns undefined
+  // in unusual SDK conditions (post-deletion race, sentinel state). The
+  // function treats this as "first hit in the window" so the transaction
+  // never throws into the catch block and the request is allowed.
+  it('treats exists-but-undefined-data as a fresh window (defensive)', async () => {
+    buildMockDb({ exists: true, data: undefined });
+    const result = await checkAndIncrementRateLimit('hash-ghost');
+    expect(result.allowed).toBe(true);
+    expect(mockTx.set).toHaveBeenCalledWith(
+      mockDocRef,
+      expect.objectContaining({ count: 1 })
+    );
+    expect(mockTx.update).not.toHaveBeenCalled();
+  });
+
   it('rejects when windowStart exists but is not a Timestamp-shaped value (corrupt data)', async () => {
     buildMockDb({
       exists: true,

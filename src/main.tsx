@@ -15,7 +15,15 @@ import { ensureFontsReady } from '@/lib/fonts';
 initAnalytics();
 ensureFontsReady();
 
-createRoot(document.getElementById('root')!).render(
+// Defensive: if `<div id="root">` is ever missing from index.html (template
+// regression), throw a descriptive error instead of letting the `!`-suppressed
+// null cause a generic "Cannot read property of null" deep inside React.
+const rootEl = document.getElementById('root');
+if (!rootEl) {
+  throw new Error('Root element #root not found in index.html');
+}
+
+createRoot(rootEl).render(
   <StrictMode>
     <ErrorBoundary>
       <App />

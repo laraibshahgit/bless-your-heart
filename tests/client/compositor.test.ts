@@ -151,6 +151,18 @@ describe('setupCanvas', () => {
     expect(ctx.imageSmoothingEnabled).toBe(true);
     expect(ctx.imageSmoothingQuality).toBe('high');
   });
+
+  it('throws a descriptive error when getContext returns null', () => {
+    const canvas = {
+      width: 0,
+      height: 0,
+      style: {} as Record<string, string>,
+      getContext: () => null,
+    } as unknown as HTMLCanvasElement;
+    expect(() => setupCanvas(canvas, 540)).toThrow(
+      /failed to acquire 2d canvas context/i
+    );
+  });
 });
 
 describe('composite', () => {
@@ -342,6 +354,16 @@ describe('checkFit', () => {
     if (!result.ok) {
       expect(result.reason).toBe('overflow');
     }
+  });
+
+  it('throws a descriptive error when getContext returns null', async () => {
+    vi.spyOn(document, 'createElement').mockReturnValue({
+      getContext: () => null,
+    } as unknown as HTMLCanvasElement);
+
+    await expect(checkFit('a', 'b', makePhoto())).rejects.toThrow(
+      /failed to acquire 2d canvas context/i
+    );
   });
 
   it('uses the worst (smallest) scale between line1 and line2', async () => {

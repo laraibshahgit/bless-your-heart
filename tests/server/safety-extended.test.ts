@@ -163,6 +163,15 @@ describe('checkDistressWithHaiku', () => {
     expect(await checkDistressWithHaiku(anthropic, 'x')).toBe(false);
   });
 
+  it('returns false (defensive default) when content array is empty', async () => {
+    const anthropic = {
+      messages: {
+        create: vi.fn().mockResolvedValue({ content: [] }),
+      },
+    } as any;
+    expect(await checkDistressWithHaiku(anthropic, 'x')).toBe(false);
+  });
+
   it('uses safety model env var when set', async () => {
     const original = process.env.ANTHROPIC_MODEL_SAFETY;
     process.env.ANTHROPIC_MODEL_SAFETY = 'claude-haiku-distress-test';

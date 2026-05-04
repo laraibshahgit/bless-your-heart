@@ -42,7 +42,12 @@ export function parseGenerationOutput(raw: string): GenerationOutput | null {
     const result = GenerationSchema.safeParse(parsed);
     if (!result.success) return null;
     return result.data;
-  } catch {
+  } catch (err) {
+    // JSON.parse failure on Sonnet output. Caller treats null as a retry signal
+    // (logged as `gen_retry reason: format` in netlify/functions/generate.ts);
+    // surface the parse cause too so a regression in the model output format
+    // is diagnosable from Netlify logs.
+    console.error(JSON.stringify({ event: 'gen_parse_failed', error: String(err) }));
     return null;
   }
 }

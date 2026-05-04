@@ -64,8 +64,12 @@ export async function checkDistressWithHaiku(
       { timeout: ANTHROPIC_REQUEST_TIMEOUT_MS }
     );
 
-    const verdict = response.content[0].type === 'text'
-      ? response.content[0].text.trim().toLowerCase()
+    // Same defensive index access as in checkTone — an empty content array
+    // or a tool_use-only response should fall through to "ok" (the fail-open
+    // verdict for the distress classifier).
+    const first = response.content[0];
+    const verdict = first && first.type === 'text'
+      ? first.text.trim().toLowerCase()
       : 'ok';
 
     return verdict.startsWith('crisis');

@@ -13,13 +13,32 @@ const SESSION_KEY = 'byh:lastPrompt';
 // for 90% of the typing experience.
 const COUNTER_VISIBLE_THRESHOLD = Math.floor(MAX_PROMPT_LENGTH * 0.9);
 
+// sessionStorage can throw in third-party iframe / cookie-blocked / quota-full
+// contexts. Treat persistence as best-effort: a failure must never bubble up
+// and crash the input. Helpers swallow the error and let the caller move on.
+function safeSessionGet(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSessionSet(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    /* persistence is best-effort; ignore quota/security errors */
+  }
+}
+
 export function PromptInput({ value, onChange, disabled }: PromptInputProps) {
   const [placeholder] = useState(() => placeholders[Math.floor(Math.random() * placeholders.length)]);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    const saved = sessionStorage.getItem(SESSION_KEY);
+    const saved = safeSessionGet(SESSION_KEY);
     if (saved && !value) onChange(saved);
   }, []);
 
@@ -28,7 +47,7 @@ export function PromptInput({ value, onChange, disabled }: PromptInputProps) {
     onChange(cleaned);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      sessionStorage.setItem(SESSION_KEY, cleaned);
+      safeSessionSet(SESSION_KEY, cleaned);
     }, 300);
   }
 

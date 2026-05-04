@@ -145,8 +145,13 @@ export async function checkTone(
       { timeout: ANTHROPIC_REQUEST_TIMEOUT_MS }
     );
 
-    const verdict = response.content[0].type === 'text'
-      ? response.content[0].text.trim().toLowerCase()
+    // Anthropic responses normally have at least one content block, but the
+    // SDK types `content` as a possibly-empty array. Guard the index access
+    // so an empty array (or a tool_use-only response) treats the tone-check
+    // as safe — same fail-open intent as the catch block below.
+    const first = response.content[0];
+    const verdict = first && first.type === 'text'
+      ? first.text.trim().toLowerCase()
       : 'safe';
 
     return verdict.startsWith('safe');

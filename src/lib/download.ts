@@ -24,7 +24,8 @@ export async function downloadPoster(canvas: HTMLCanvasElement): Promise<boolean
     const filename = `bless-your-heart-${shortId()}.png`;
     saveAs(blob, filename);
     return true;
-  } catch {
+  } catch (err) {
+    console.error(JSON.stringify({ event: 'download_failed', error: String(err) }));
     return false;
   }
 }

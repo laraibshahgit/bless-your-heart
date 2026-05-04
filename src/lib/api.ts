@@ -30,7 +30,11 @@ export async function callGenerate(
     }
 
     return (await response.json()) as GenerateResponse;
-  } catch {
+  } catch (err) {
+    // Surface the cause to the browser console so dev/QA can diagnose without
+    // server access (network failure, AbortSignal timeout, JSON parse). Same
+    // structured shape as server-side fail-open logs for grep parity.
+    console.error(JSON.stringify({ event: 'gen_client_error', error: String(err) }));
     if (!navigator.onLine) {
       return { status: 'error', message: errorCopy.generation.networkOffline, retryable: true };
     }
