@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
 import { downloadPoster, isIOSSafari } from '@/lib/download';
-import { downloadConfirmation, errorCopy } from '@/content/copy';
+import { downloadConfirmation, downloadCopy, errorCopy } from '@/content/copy';
 import { track } from '@/lib/analytics';
 
 // Status auto-reset durations. Error stays visible longer than success because
@@ -56,7 +56,7 @@ export function DownloadButton() {
 
       {showIOSHint && (
         <p className="mt-2 text-caption text-ink-faint italic">
-          On iPhone? Long-press the image after the new tab opens to save.
+          {downloadCopy.iosHint}
         </p>
       )}
 

@@ -2,6 +2,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import type { Hotline } from '@/types';
 import { track } from '@/lib/analytics';
+import { distressCopy } from '@/content/copy';
 
 interface DistressInterstitialProps {
   open: boolean;
@@ -51,10 +52,10 @@ export function DistressInterstitial({ open, hotline, onClose }: DistressInterst
         aria-modal="true"
       >
         <p className="font-serif text-headline italic text-ink-deep">
-          This one isn't for jokes.
+          {distressCopy.headline}
         </p>
         <p className="font-serif text-body text-ink-soft italic">
-          If you're going through something serious, please talk to someone who can actually help. You're not alone in it.
+          {distressCopy.body}
         </p>
         {hotline.phone && telHref && (
           <p className="font-serif text-body-lg font-medium text-ink-deep">
@@ -64,19 +65,19 @@ export function DistressInterstitial({ open, hotline, onClose }: DistressInterst
           </p>
         )}
         <p className="font-serif text-body text-ink-soft italic">
-          Or visit{' '}
+          {distressCopy.hotlineLinkPrefix}
           <a
             href={hotlineUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="text-accent-sage underline"
           >
-            findahelpline.com
-          </a>{' '}
-          for support anywhere in the world.
+            {distressCopy.hotlineLinkLabel}
+          </a>
+          {distressCopy.hotlineLinkSuffix}
         </p>
         <Button variant="secondary" onClick={handleClose}>
-          Take me back
+          {distressCopy.closeAction}
         </Button>
       </DialogContent>
     </Dialog>
