@@ -255,3 +255,7 @@ Tiered system: CLAUDE.md → [MEMORY.md](.claude/memory/MEMORY.md) → topic fil
 **Updating docs**: When code changes affect a rule in CLAUDE.md, update CLAUDE.md. When code changes affect a feature covered by a memory file, update that file. Topic files target 40–150 lines — split into hub + sub-topic files when content clusters into distinct concerns.
 
 For PRD specs (deep reference, never auto-loaded): [prd-index.md](.claude/memory/prd-index.md) maps topics to `PRD/##_*.md` doc numbers.
+
+## NightyTidy — Last Run
+
+Last run: 2026-05-01. To undo, reset to git tag `nightytidy-before-2026-05-01-1532`.
