@@ -2,7 +2,14 @@
 
 This guide codifies the dominant patterns observed in the existing API surface. Use it when adding new endpoints, request/response fields, or error variants. The aim is to keep the surface coherent — not to prescribe a "best" REST style.
 
-The current surface has exactly one endpoint (`POST /.netlify/functions/generate`, also reachable at `/api/generate` via the redirect in `netlify.toml`). All conventions below were extracted from that endpoint and the supporting types in `src/types/index.ts`.
+The current surface has two endpoints, both reachable via the `/api/* → /.netlify/functions/*` redirect in `netlify.toml`:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/generate` | `POST` | Generation pipeline (filters → Anthropic → photo selection → JSON wrapper response) |
+| `/api/health` | `GET`, `HEAD` | Readiness probe (config + Firestore) by default; `?mode=live` for zero-IO liveness ping. NEVER calls Anthropic (cost guard). Audit 40/001 |
+
+All conventions below were extracted from these endpoints and the supporting types in `src/types/index.ts`.
 
 ---
 
@@ -22,30 +29,33 @@ The current surface has exactly one endpoint (`POST /.netlify/functions/generate
 | Method | Use for | Used today |
 |---|---|---|
 | `POST` | Generation, mutations, anything with side effects (rate-limit increment), and computational endpoints whose response depends on randomness. | `POST /generate` |
-| `GET` | Read-only fetches with no side effects. Safe to cache. | None today. |
+| `GET` | Read-only fetches with no side effects. | `GET /api/health` (probe; `Cache-Control: no-store` because each probe must hit the lambda fresh — cache would defeat the readiness signal). |
+| `HEAD` | Same semantics as `GET` but without the response body — handy for ultra-cheap CDN/uptime probes. | `HEAD /api/health` accepted alongside `GET`. |
 | `PUT` | Full replacement of a resource. | None today. |
 | `PATCH` | Partial update. | None today. |
 | `DELETE` | Remove a resource. Must be idempotent. | None today. |
 
 `POST /generate` is correct: each call mutates rate-limit state (Firestore transaction) and returns a freshly-generated payload.
 
-Any non-`POST` request on the existing endpoint MUST return `405 Method Not Allowed` with the `Allow: POST` header (RFC 7231 §6.5.5). The handler enforces this.
+Any non-`POST` request on `/api/generate` MUST return `405 Method Not Allowed` with the `Allow: POST` header (RFC 7231 §6.5.5). Any non-`GET`/non-`HEAD` request on `/api/health` MUST return `405` with `Allow: GET, HEAD`. Both handlers enforce this.
 
 ---
 
 ## Status Codes
 
-This API follows a **wrapper pattern**: every JSON response uses HTTP `200` and embeds the outcome in a `status` discriminator inside the body. The single exception is HTTP-level errors (malformed JSON, wrong method) that return `400` / `405` because the handler never reached the business logic.
+The `/generate` endpoint follows a **wrapper pattern**: every JSON response uses HTTP `200` and embeds the outcome in a `status` discriminator inside the body. The single exception is HTTP-level errors (malformed JSON, wrong method, off-origin) that return `400` / `403` / `405` because the handler never reached the business logic. The `/health` endpoint is **probe-shaped**: status code IS the readiness signal so load balancers / uptime monitors can use it directly.
 
-| Status code | When it's returned | Body shape |
-|---|---|---|
-| `200` | Every business-logic outcome — success, blocked, distress, rate-limited, safe-fallback. | `GenerateResponse` discriminated union. |
-| `400` | Malformed JSON, Zod validation failure. | `{ status: 'error', message, retryable: false }` |
-| `405` | Any HTTP method other than POST. | `{ status: 'error', message, retryable: false }`. Headers MUST include `Allow: POST`. |
+| Status code | When it's returned | Body shape | Endpoint |
+|---|---|---|---|
+| `200` | `/generate`: every business-logic outcome (ok, blocked, distress, rate-limited, safe-fallback). `/health`: lambda is alive (mode=live) OR ready/degraded (mode=ready). | `GenerateResponse` for `/generate`; `HealthBody` for `/health`. | both |
+| `400` | Malformed JSON, Zod validation failure. | `{ status: 'error', message, retryable: false }` | `/generate` |
+| `403` | Origin not in `ALLOWED_ORIGINS` allowlist (CSRF shield). | `{ status: 'error', message: 'Forbidden.', retryable: false }` | `/generate` |
+| `405` | Wrong HTTP method. | `{ status: 'error', message, retryable: false }`. Headers MUST include `Allow: <methods>`. | both |
+| `503` | `/health` (readiness only) when the config check fails — i.e. the lambda fundamentally cannot serve a `/generate` request. | `{ status: 'unhealthy', mode: 'ready', checks: [...] }` | `/health?mode=ready` |
 
-**Do not** introduce `4xx` codes for business outcomes (e.g. don't return `429` for rate-limit, `403` for blocked). Clients only inspect `body.status`. Mixing the two patterns would force them to inspect both.
+**`/generate` rules**: Do not introduce `4xx` codes for business outcomes (e.g. don't return `429` for rate-limit, `403` for blocked). Clients only inspect `body.status`. Mixing the two patterns would force them to inspect both. Do not introduce `5xx` codes. The product contract is "user always gets a poster" — handler-level errors fall through to `safe_fallback` (200). The only `5xx` clients would ever see is from infrastructure (Netlify), not from handler code.
 
-**Do not** introduce `5xx` codes. The product contract is "user always gets a poster" — handler-level errors fall through to `safe_fallback` (200). The only `5xx` clients would ever see is from infrastructure (Netlify), not from handler code.
+**`/health` rules**: Status code IS the contract. Probes act on it directly without parsing the body. Reserve `503` for "lambda cannot serve" — Firestore-only failures map to `200 { status: "degraded" }` instead, because rate-limit fail-open keeps `/generate` working. Same triage axis as `validateProdEnv()`.
 
 ---
 
@@ -101,7 +111,8 @@ Add response-specific headers as needed:
 
 | Header | When | Value |
 |---|---|---|
-| `Allow: POST` | On `405` responses. | `POST` (the only allowed method). |
+| `Allow: <methods>` | On `405` responses. | The methods the endpoint accepts (e.g. `POST` on `/generate`, `GET, HEAD` on `/health`). |
+| `X-Request-Id` | On every `/generate` response (including 400/403/405 paths). | The same value as the `request_id` field on every server log line emitted during the request. Honors inbound `x-nf-request-id` (Netlify-provided) when present, else a generated 16-hex-char ID. Audit 40/001 |
 | `X-RateLimit-Limit` | On any response where the rate-limit module ran. | Configured per-hour limit. |
 | `X-RateLimit-Remaining` | Same — only on allowed responses. | Calls remaining in the current window. |
 | `X-RateLimit-Reset` | Same. | Epoch seconds when the current window expires. |
@@ -171,25 +182,47 @@ If a future endpoint is destructive (`DELETE`, irreversible mutation), follow th
 
 Every code path emits a JSON log line with an `event` field. Never log prompt content or generated output — only event types and minimal context.
 
-Established events:
+**Server-side logs MUST go through `logEvent` / `logError` from [`src/server/log.ts`](../src/server/log.ts)** — never `console.log(JSON.stringify(...))` directly. The helpers auto-attach a `request_id` field that matches the response's `X-Request-Id` header when called inside the handler's `runWithRequestContext` scope. This makes a single user's request grep-able end-to-end across retries and helper modules. Audit 40/001.
+
+```ts
+import { logEvent, logError } from '@/server/log';
+
+logEvent('foo_ok', { duration_ms: 123 });
+// → console.log({ event: 'foo_ok', duration_ms: 123, request_id: 'abc' })
+
+logError('foo_failed', { error: String(err) });
+// → console.error({ event: 'foo_failed', error: '...', request_id: 'abc' })
+```
+
+Established events (all emit `request_id` when fired inside the handler scope):
 
 ```
+# /generate path
 gen_ok, gen_block, gen_distress, gen_rate_limited, gen_retry, gen_safe_fallback,
-gen_anthropic_error, rate_limit_check_failed, tone_check_failed, distress_check_failed
+gen_anthropic_error, gen_parse_failed, rate_limit_check_failed,
+tone_check_failed, distress_check_failed
+
+# /health path
+health_firestore_probe_failed
+
+# Lambda cold-start (no request scope; emitted without request_id)
+config_validation_failed
 ```
 
 When adding a new code path, add a new `event` value and document it here. Reuse existing values where the semantics match.
 
-**Fail-open / fail-closed catches**: any `console.error` in a `try/catch` that *swallows* the error (returns a default and continues) MUST capture the cause:
+**Fail-open / fail-closed catches**: any `logError` in a `try/catch` that *swallows* the error (returns a default and continues) MUST capture the cause:
 
 ```ts
 } catch (err) {
-  console.error(JSON.stringify({ event: 'foo_failed', error: String(err) }));
+  logError('foo_failed', { error: String(err) });
   return defaultValue;
 }
 ```
 
-Without `error: String(err)` the on-call has only the event name and no way to distinguish a Firestore timeout from a credential error from a SDK bug. The four existing fail-open events (`gen_anthropic_error`, `rate_limit_check_failed`, `tone_check_failed`, `distress_check_failed`) all follow this pattern. New fail-open paths must too. (Reinforced by audit run 13/001, which closed two gaps where the catch had been written without binding `err`.)
+Without `error: String(err)` the on-call has only the event name and no way to distinguish a Firestore timeout from a credential error from a SDK bug. The five existing fail-open events (`gen_anthropic_error`, `gen_parse_failed`, `rate_limit_check_failed`, `tone_check_failed`, `distress_check_failed`) all follow this pattern. New fail-open paths must too. (Reinforced by audit run 13/001, which closed two gaps where the catch had been written without binding `err`.)
+
+For operational playbooks per failure mode, see [`docs/RUNBOOKS.md`](RUNBOOKS.md) — Anthropic outage, Firestore unreachable, CSRF disabled, cost spike, photo CDN outage, etc.
 
 ---
 
@@ -221,7 +254,9 @@ Without `error: String(err)` the on-call has only the event name and no way to d
 ## Recipe: Adding a New Endpoint
 
 1. Create `netlify/functions/<name>.ts` with the same baseline structure: Zod request schema → method check → rate-limit (if applicable) → business logic → JSON response.
-2. Use `baseHeaders` and the same header conventions.
-3. If non-trivial, add an integration test (`tests/server/<name>-integration.test.ts`) and a contract test (`tests/server/<name>-contract.test.ts`).
-4. Reuse `getClientIp` / `hashIp` for rate-limit identification — don't roll your own IP extraction.
-5. Add the endpoint to this guide's surface table at the top.
+2. Use `baseHeaders` and the same header conventions. Set `X-Request-Id` on every response (use `resolveRequestId(event.headers)` from `@/server/log`).
+3. Wrap the handler body in `runWithRequestContext({ requestId }, async () => { ... })` so every `logEvent` / `logError` call inside (including in awaited helper modules) auto-attaches the `request_id` field.
+4. If non-trivial, add an integration test (`tests/server/<name>-integration.test.ts`) and a contract test (`tests/server/<name>-contract.test.ts`). Pin the `X-Request-Id` echo behavior the same way `tests/server/generate-integration.test.ts > "X-Request-Id correlation"` does.
+5. Reuse `getClientIp` / `hashIp` for rate-limit identification — don't roll your own IP extraction.
+6. If the endpoint touches an external dependency that could fail (Firestore, Anthropic, photo CDN), add a runbook entry in `docs/RUNBOOKS.md` covering symptoms, diagnosis, resolution, prevention.
+7. Add the endpoint to this guide's surface table at the top.
