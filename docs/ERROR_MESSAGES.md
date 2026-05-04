@@ -84,7 +84,7 @@ All paths relative to repo root.
 | `generation.timeout` | client fetch times out (declared but currently unused — `unknown` covers timeout via the catch path) | "The cosmos is having one of those days. Give it a moment." |
 | `generation.networkOffline` | `!navigator.onLine` after a fetch failure | "Your connection drifted off into the wilderness. Try again when it's back." |
 | `generation.unknown` | fetch failed with no clear reason / non-2xx-non-5xx | "Something didn't quite land. One more try?" |
-| `frontend.canvasWriteFailed` | declared but currently unused (PosterCanvas calls `onFitFailure` instead) | "The image didn't quite render. One more try?" |
+| `frontend.canvasWriteFailed` | photo CDN load fails or `checkFit` misses — surfaced via `onCanvasFailure` from [`App.tsx`](../src/App.tsx) → state transitions to `error` with retryable affordance (wired in audit run 27/001 alongside the `loadImage` 15s timeout) | "The image didn't quite render. One more try?" |
 | `frontend.downloadFailed` | `downloadPoster()` returned `false` | "Even the download is having a moment. Try once more." |
 | `frontend.fontLoadTimeout` | declared but currently unused | "The typography is taking its time. Refreshing might help." |
 | `errorBoundary` | React `componentDidCatch` triggered | "The page lost the thread. Refreshing usually helps." |
