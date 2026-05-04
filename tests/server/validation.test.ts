@@ -16,15 +16,8 @@ describe('parseGenerationOutput', () => {
     expect(parseGenerationOutput('not json')).toBeNull();
   });
 
-  it('returns null when line1 exceeds 60 chars', () => {
-    const long = 'a'.repeat(61);
-    expect(parseGenerationOutput(`{"line1":"${long}","line2":"short enough for line two easily"}`)).toBeNull();
-  });
-
-  it('returns null when line2 exceeds 100 chars', () => {
-    const long = 'a'.repeat(101);
-    expect(parseGenerationOutput(`{"line1":"short","line2":"${long}"}`)).toBeNull();
-  });
+  // Length-cap rejection (line1 > 60, line2 > 100) is exhaustively covered with
+  // boundary tests (60, 61, 100, 101) in validation-extended.test.ts.
 
   it('returns null for extra fields', () => {
     expect(parseGenerationOutput('{"line1":"a","line2":"b is long enough now","extra":"field"}')).toBeNull();
@@ -32,9 +25,9 @@ describe('parseGenerationOutput', () => {
 });
 
 describe('checkSpecificity', () => {
-  it('passes when prompt words appear in line2', () => {
-    expect(checkSpecificity("haven't started yet", 'The starting line moved again.')).toBe(true);
-  });
+  // The "haven't started" overlap and the question-mark bypass are covered as
+  // 'handles prompts with apostrophes' and 'returns true for question prompts...'
+  // in validation-extended.test.ts.
 
   it('fails when line2 is completely generic', () => {
     expect(checkSpecificity("haven't started yet", 'Life is hard and then you die.')).toBe(false);
@@ -46,9 +39,5 @@ describe('checkSpecificity', () => {
 
   it('passes via synonym map', () => {
     expect(checkSpecificity('Monday again', 'The week loops without consent.')).toBe(true);
-  });
-
-  it('bypasses for question-mark prompts', () => {
-    expect(checkSpecificity('what is love?', 'Totally unrelated output here.')).toBe(true);
   });
 });

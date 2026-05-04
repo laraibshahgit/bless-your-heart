@@ -42,8 +42,19 @@ const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm text-ink-soft opacity-70 ring-offset-cream transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-accent-sage/50 focus:ring-offset-2 disabled:pointer-events-none">
-        <X className="h-4 w-4" />
+      {/*
+        Two consistency fixes (audit run 34/001):
+          1) ring-offset-paper (was ring-offset-cream) — DialogContent has
+             bg-paper, so the offset color must match the dialog background
+             or the focus ring renders against the wrong color underneath.
+          2) focus-visible:* (was focus:*) — every other focusable surface
+             in the design system uses focus-visible (Button, Input,
+             Textarea, the new CreditsDialog trigger). focus: also fires on
+             mouse click, leaving a stale ring after the user closes the
+             dialog and reopens it.
+      */}
+      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm text-ink-soft opacity-70 ring-offset-paper transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-sage/50 focus-visible:ring-offset-2 disabled:pointer-events-none">
+        <X className="h-4 w-4" aria-hidden="true" />
         <span className="sr-only">Close</span>
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>

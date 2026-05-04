@@ -11,8 +11,13 @@ tsconfig.tsbuildinfo
 .env.local
 .env.*.local
 
-# Firebase
+# Firebase / credentials
 serviceAccountKey.json
+*-firebase-adminsdk-*.json
+*.pem
+*.key
+*.p12
+*.pfx
 firebase-debug.log
 firestore-debug.log
 
@@ -33,3 +38,6 @@ coverage/
 *.log
 npm-debug.log*
 .playwright-mcp/
+
+# NightyTidy orchestrator runtime artifacts (lock, progress, run-state, session logs)
+nightytidy*

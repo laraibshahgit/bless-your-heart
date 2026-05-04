@@ -1,5 +1,12 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { callGenerate } from '@/lib/api';
 import { errorCopy } from '@/content/copy';
+
+// jsdom directive above is required: this file modifies `navigator.onLine` and
+// stubs `fetch`. Running under the default `node` env worked only because Node 21+
+// added a built-in `globalThis.navigator` — older Node and CI images that pin
+// the minor would silently fail.
 
 beforeEach(() => {
   Object.defineProperty(globalThis.navigator, 'onLine', {
@@ -30,12 +37,39 @@ describe('callGenerate', () => {
 
     const result = await callGenerate('my career', []);
 
-    expect(fetch).toHaveBeenCalledWith('/.netlify/functions/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: 'my career', excludePhotoIds: [] }),
-    });
+    expect(fetch).toHaveBeenCalledWith(
+      '/.netlify/functions/generate',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: 'my career', excludePhotoIds: [] }),
+      })
+    );
     expect(result).toEqual(mockBody);
+  });
+
+  // Outer fetch timeout contract — see api.ts comment. The signal is the only
+  // guard the browser has if a Netlify lambda hangs mid-response (e.g. the
+  // platform returns headers but never closes the stream). Without this the
+  // user's tab spinner runs forever; with it, the timeout-rejected fetch
+  // falls into the catch block and surfaces errorCopy.generation.unknown.
+  it('attaches an AbortSignal to the fetch call (timeout cap)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          status: 'ok',
+          line1: 'a',
+          line2: 'b',
+          photoId: 'x',
+          fittingRung: 1,
+        }),
+    });
+
+    await callGenerate('test', []);
+
+    const init = (fetch as any).mock.calls[0][1];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('returns retryable error on network failure', async () => {

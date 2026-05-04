@@ -13,6 +13,18 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
 
+    <!--
+      Photo CDN preconnect. Posters source their landscape backgrounds from
+      Firebase Storage; without this, the first photo load pays full DNS + TCP
+      + TLS handshake (typically 100–300 ms) AFTER the user clicks "generate."
+      Warming the connection during HTML parse runs the handshake in parallel
+      with the bundle download so the photo fetch starts on a hot socket.
+      `crossorigin` is required because the canvas-side fetch sets it for
+      taintless drawImage; keeping the preconnect attribute aligned ensures
+      the browser dedupes the connection instead of opening a second one.
+    -->
+    <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin />
+
     <meta property="og:title" content="Bless Your Heart" />
     <meta property="og:description" content="The honest motivational posters you didn't ask for." />
     <meta property="og:image" content="/og-hero.png" />

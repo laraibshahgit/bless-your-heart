@@ -5,6 +5,10 @@ interface PhotoSelectionResult {
   rung: 1 | 2 | 3;
 }
 
+function randomPick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 export function selectPhoto(
   photos: Photo[],
   line1Length: number,
@@ -19,8 +23,7 @@ export function selectPhoto(
   );
 
   if (eligible.length > 0) {
-    const pick = eligible[Math.floor(Math.random() * eligible.length)];
-    return { photoId: pick.id, rung: 1 };
+    return { photoId: randomPick(eligible).id, rung: 1 };
   }
 
   const highCap = photos.filter(
@@ -28,15 +31,13 @@ export function selectPhoto(
   );
 
   if (highCap.length > 0) {
-    const pick = highCap[Math.floor(Math.random() * highCap.length)];
-    return { photoId: pick.id, rung: 2 };
+    return { photoId: randomPick(highCap).id, rung: 2 };
   }
 
   const allHighCap = photos.filter((p) => p.tier === 'high-capacity');
 
   if (allHighCap.length > 0) {
-    const pick = allHighCap[Math.floor(Math.random() * allHighCap.length)];
-    return { photoId: pick.id, rung: 3 };
+    return { photoId: randomPick(allHighCap).id, rung: 3 };
   }
 
   return null;

@@ -8,5 +8,3 @@ export const presets = [
   'Just one of those days',
   'Adulting',
 ] as const;
-
-export type Preset = (typeof presets)[number];

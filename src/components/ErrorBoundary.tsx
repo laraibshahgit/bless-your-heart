@@ -18,7 +18,9 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error) {
-    console.error('ErrorBoundary caught:', error);
+    // Structured log shape matches server-side fail-open logs (event + error)
+    // so ops grep patterns work consistently across browser and lambda logs.
+    console.error(JSON.stringify({ event: 'error_boundary', error: String(error) }));
   }
 
   render() {

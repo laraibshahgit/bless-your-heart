@@ -1,4 +1,61 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { logError } from './log';
+
+// Generation request budget. 200 tokens comfortably covers two lines under the
+// 60/100 char caps with JSON wrapper overhead — line1 + line2 + braces is ~50
+// tokens worst case, leaving headroom for retries to vary phrasing without
+// truncation. Temperature 0.9 keeps generations creative across regenerates;
+// the joke depends on phrase variety from one regenerate to the next.
+const GENERATION_MAX_TOKENS = 200;
+const GENERATION_TEMPERATURE = 0.9;
+
+// Safety classifier budget. Both tone-check and distress-check return EXACTLY
+// one word ("safe"|"user", "crisis"|"ok") — 10 tokens leaves slack for any
+// model that prefixes whitespace or quotes without truncating the verdict.
+// Temperature 0 makes the classifier deterministic for the same input, which
+// is correct for a binary classifier (we don't want regenerates flipping the
+// verdict on identical text). Exported because safety.ts uses the same budget
+// for the distress classifier.
+export const SAFETY_MAX_TOKENS = 10;
+export const SAFETY_TEMPERATURE = 0;
+
+// Per-request timeout for every Anthropic SDK call (generation + safety).
+// The SDK default is 10 minutes, which is dangerous in a serverless context:
+// a hung provider would tie up the lambda until Netlify kills it (10s default,
+// 26s max on the free tier), wasting the entire budget on one stuck request.
+// 12 seconds gives the retry loop ~2 attempts inside a 26s lambda budget
+// (worst case: 12s gen + 10s tone-check + 4s margin) while failing fast under
+// provider degradation. Exported so safety.ts uses the same value — single
+// source of truth for the request-level cap.
+export const ANTHROPIC_REQUEST_TIMEOUT_MS = 12_000;
+
+// Duck-type check for an Anthropic SDK APIError-shaped exception. Used to
+// extract the HTTP status from a thrown error so structured logs include the
+// status code (401 vs 429 vs 5xx vs network-level) for incident diagnosis. We
+// don't `instanceof Anthropic.APIError` because the integration tests mock the
+// SDK module wholesale (see tests/server/generate-integration.test.ts) and the
+// mocked module doesn't preserve the APIError class — duck typing is robust
+// against the test harness without coupling to it. APIConnectionError /
+// APIConnectionTimeoutError have no status, so this returns undefined for
+// network-level failures. Audit run 33/001.
+export function getApiErrorStatus(err: unknown): number | undefined {
+  if (typeof err !== 'object' || err === null) return undefined;
+  const status = (err as { status?: unknown }).status;
+  return typeof status === 'number' ? status : undefined;
+}
+
+// Prompt caching marker. Anthropic supports caching large, stable prompt
+// prefixes — subsequent requests that reuse the same prefix pay ~10% of the
+// uncached input rate (Sonnet) or ~10% (Haiku) for the cached portion. The
+// generation system prompt is ~1300 tokens, the tone-check prompt ~140, and
+// the distress-check prompt ~250 — all reused on every request. Marking them
+// with `cache_control: { type: 'ephemeral' }` (5-minute TTL) cuts ~70–85% of
+// recurring input cost across the entire pipeline at zero behavioral change.
+// First request after a cold cache pays a 1.25× write surcharge on the cached
+// segment, but breaks even after the second hit and is net-positive at scale.
+// Exported so safety.ts uses the same constant (one place to flip if Anthropic
+// pricing or TTL options change).
+export const PROMPT_CACHE_CONTROL = { type: 'ephemeral' as const };
 
 let client: Anthropic | null = null;
 
@@ -60,13 +117,20 @@ export async function generateLines(
   anthropic: Anthropic,
   prompt: string
 ): Promise<string> {
-  const response = await anthropic.messages.create({
-    model: process.env.ANTHROPIC_MODEL_GEN ?? 'claude-sonnet-4-6',
-    max_tokens: 200,
-    temperature: 0.9,
-    system: VOICE_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: prompt }],
-  });
+  const response = await anthropic.messages.create(
+    {
+      model: process.env.ANTHROPIC_MODEL_GEN ?? 'claude-sonnet-4-6',
+      max_tokens: GENERATION_MAX_TOKENS,
+      temperature: GENERATION_TEMPERATURE,
+      // System prompt is sent as a content-block array (instead of a bare
+      // string) so the cache_control marker can attach to the static voice
+      // prefix. The prompt text itself is unchanged — this is a wire-format
+      // tweak that Anthropic uses to identify the cacheable prefix.
+      system: [{ type: 'text', text: VOICE_SYSTEM_PROMPT, cache_control: PROMPT_CACHE_CONTROL }],
+      messages: [{ role: 'user', content: prompt }],
+    },
+    { timeout: ANTHROPIC_REQUEST_TIMEOUT_MS }
+  );
 
   return response.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -100,24 +164,42 @@ export async function checkTone(
   if (process.env.ENABLE_TONE_CHECK === 'false') return true;
 
   try {
-    const response = await anthropic.messages.create({
-      model: process.env.ANTHROPIC_MODEL_SAFETY ?? 'claude-haiku-4-5',
-      max_tokens: 10,
-      temperature: 0,
-      system: TONE_CHECK_PROMPT,
-      messages: [{
-        role: 'user',
-        content: `User input: "${prompt}"\nGenerated line 2: "${line2}"`,
-      }],
-    });
+    const response = await anthropic.messages.create(
+      {
+        model: process.env.ANTHROPIC_MODEL_SAFETY ?? 'claude-haiku-4-5',
+        max_tokens: SAFETY_MAX_TOKENS,
+        temperature: SAFETY_TEMPERATURE,
+        system: [{ type: 'text', text: TONE_CHECK_PROMPT, cache_control: PROMPT_CACHE_CONTROL }],
+        messages: [{
+          role: 'user',
+          content: `User input: "${prompt}"\nGenerated line 2: "${line2}"`,
+        }],
+      },
+      { timeout: ANTHROPIC_REQUEST_TIMEOUT_MS }
+    );
 
-    const verdict = response.content[0].type === 'text'
-      ? response.content[0].text.trim().toLowerCase()
+    // Anthropic responses normally have at least one content block, but the
+    // SDK types `content` as a possibly-empty array. Guard the index access
+    // so an empty array (or a tool_use-only response) treats the tone-check
+    // as safe — same fail-open intent as the catch block below.
+    const first = response.content[0];
+    const verdict = first && first.type === 'text'
+      ? first.text.trim().toLowerCase()
       : 'safe';
 
     return verdict.startsWith('safe');
-  } catch {
-    console.error(JSON.stringify({ event: 'tone_check_failed' }));
+  } catch (err) {
+    // Surface the HTTP status (when available) alongside the error string so
+    // ops can distinguish "auth failure / misconfigured key" (401) from
+    // "transient provider 5xx" from "client-side timeout" without re-running
+    // a curl against the API. Same shape applied to gen_anthropic_error and
+    // distress_check_failed for grep parity. Audit run 33/001.
+    // Routed through `logError` so the request_id is auto-attached when
+    // this fires inside a `runWithRequestContext` scope. Audit run 40/001.
+    logError('tone_check_failed', {
+      error: String(err),
+      status: getApiErrorStatus(err),
+    });
     return true;
   }
 }

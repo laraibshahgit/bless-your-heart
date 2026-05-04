@@ -15,4 +15,21 @@
   .text-poster-dark {
     color: #1a1612;
   }
+  /*
+    The preset-buttons row in PresetButtons.tsx applies `scrollbar-none` to
+    hide the horizontal scroll affordance on `overflow-x-auto`. Tailwind has
+    no built-in `scrollbar-none` utility, so without this rule the class is
+    silently dropped and the scrollbar renders under the pill row on every
+    Windows browser (and on macOS when "Always show" is selected). The fix
+    is the standard cross-browser combo: hide via `display: none` on the
+    WebKit pseudo-element + zero `scrollbar-width` on Firefox + `-ms-` for
+    legacy IE/Edge. Audit run 35/001.
+  */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }

@@ -4,32 +4,29 @@ A single-page web app that generates anti-affirmation posters — reverent inspi
 
 ---
 
-## Workflow Rules
+## Multi-Agent Safety
 
-- **Pre-deploy checks**: `npm run lint && npm run typecheck && npm run lint:photos && npm run build`
-- **Manual smoke test before launch**: generate + download on iOS Safari
-- `main` branch auto-deploys to production via Netlify
-- Never expose `ANTHROPIC_API_KEY` to the browser — all AI calls server-side only
+This repo is operated by NightyTidy and may have multiple agents working on branches concurrently.
+
+- **NEVER delete files** — only create or modify
+- **NEVER switch, create, or merge branches** — orchestrator handles all branching
+- **NEVER run destructive git commands** — no `reset`, `clean`, `checkout --`, `rm`, force-push
+- All memory files live under [`.claude/memory/`](.claude/memory/) and are git-tracked — do not move them to user-level memory
+- When committing, write descriptive messages and commit only the files you intentionally changed
 
 ---
 
-## Tech Stack
+## Workflow Rules
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18.3+, TypeScript 5.4+, Vite 5+, Tailwind CSS 3.4+, Shadcn/UI |
-| Backend | Netlify Functions (Node 20 LTS) |
-| Database | Firestore (Spark tier — rate-limit counters only) |
-| Storage | Firebase Cloud Storage (photo library CDN) |
-| Auth | None — no user accounts |
-| AI — Generation | Claude Sonnet 4.6 (~$0.005/call) |
-| AI — Safety | Claude Haiku 4.5 (~$0.0003/call) |
-| Compositing | HTML5 Canvas API (native, not html2canvas) |
-| Analytics | PostHog (free tier, 1M events/month) |
-| Icons | lucide-react |
-| Form | react-hook-form + Zod |
-| Font | Cormorant Garamond (self-hosted via @fontsource) |
-| Testing | Vitest |
+- **Pre-deploy check**: `npm run build` (already runs `lint:photos && tsc -b --noEmit && vite build`)
+- **Single-file test**: `npx vitest run tests/path/to/file.test.ts`
+- **Watch mode**: `npm run test:watch`
+- **Fast smoke check (after deploy)**: `npx vitest run tests/smoke.test.ts` — 7 critical-path tests, < 400 ms
+- **Coverage report**: `npx vitest run --coverage --coverage.include='src/**/*.{ts,tsx}' --coverage.exclude='src/**/*.d.ts' --coverage.exclude='src/main.tsx'` (uses `@vitest/coverage-v8`)
+- **Manual smoke test before launch**: generate + download on iOS Safari
+- **Branch convention**: `master` is the default branch (project predates `main` rename); production deploys auto-trigger from `master` push to Netlify
+- **NEVER expose `ANTHROPIC_API_KEY` to the browser** — Claude calls live in [`src/server/anthropic.ts`](src/server/anthropic.ts), invoked only by [`netlify/functions/generate.ts`](netlify/functions/generate.ts)
+- **There is no `npm run lint`** — type-check via `npm run typecheck`. ESLint is not configured
 
 ---
 
@@ -38,210 +35,227 @@ A single-page web app that generates anti-affirmation posters — reverent inspi
 ```
 bless-your-heart/
 ├── netlify.toml, vite.config.ts, tailwind.config.ts, tsconfig.json
-├── public/
-│   ├── favicon.svg, og-hero.png, manifest.webmanifest
-│   └── examples/                # Pre-rendered hero poster PNGs
+├── firebase.json, firestore.rules, storage.rules, .firebaserc
+├── public/                       # Static assets (favicon, og-hero, examples/)
+├── PRD/                          # 25 product spec docs (00–24)
 │
 ├── src/
-│   ├── main.tsx                 # Vite entry
-│   ├── App.tsx                  # Single page
-│   ├── types/index.ts
-│   ├── components/
-│   │   ├── ui/                  # Shadcn primitives
-│   │   ├── PromptInput.tsx
-│   │   ├── PresetButtons.tsx
-│   │   ├── PosterCanvas.tsx     # Canvas rendering wrapper
-│   │   ├── PosterReveal.tsx     # Reveal animation + regenerate
-│   │   ├── DownloadButton.tsx
-│   │   ├── DistressInterstitial.tsx
-│   │   └── HeroExamples.tsx
-│   ├── lib/
-│   │   ├── api.ts               # Fetch wrapper to /api/generate
-│   │   ├── compositor.ts        # Canvas drawing logic
-│   │   ├── textFitting.ts       # Width verification
-│   │   ├── photos.ts, analytics.ts, download.ts
-│   ├── data/photos.json         # ~75 photo entries with metadata
-│   ├── content/                 # Presets, examples, copy, safety lists
+│   ├── main.tsx                  # Vite entry — wraps App in ErrorBoundary
+│   ├── App.tsx                   # Single page — orchestrates state machine
+│   ├── types/index.ts            # All shared types
+│   ├── components/               # Feature components (App-level)
+│   │   └── ui/                   # Shadcn primitives — Button, Dialog, Input, Textarea
+│   ├── lib/                      # CLIENT-only utilities (api, compositor, fonts, photos, download, analytics, cn)
+│   ├── server/                   # SERVER-only modules — bundled into Netlify function
+│   │   ├── anthropic.ts          # Claude calls + voice system prompt
+│   │   ├── safety.ts             # Slur/real-person/distress checks
+│   │   ├── distress-phrases.ts, slur-list.ts, hotlines.ts, fallbacks.ts, synonyms.ts
+│   │   ├── photoSelection.ts     # 3-rung capacity-based picker
+│   │   ├── rateLimit.ts          # Daily-salted SHA-256 IP hash + Firestore txn
+│   │   ├── validation.ts         # Zod parse + lexical specificity check
+│   │   └── firebaseAdmin.ts      # Lazy-init Firestore client
+│   ├── data/photos.json          # Photo library (10 entries currently)
+│   ├── content/                  # CLIENT in-voice copy — copy.ts, presets.ts, placeholders.ts
 │   └── styles/globals.css
 │
 ├── netlify/functions/
-│   └── generate.ts              # Single generation endpoint
+│   └── generate.ts               # Single endpoint — orchestrates filter → generate → select pipeline
 │
-├── tools/curation/              # Photo metadata tagging (local only)
+├── tools/                        # Local-only scripts
+│   ├── lint-photos.ts            # CI-run validator for photos.json
+│   ├── upload-photos.mjs         # Generate gradient placeholders + upload to Firebase Storage
+│   ├── upload-real-photos.mjs    # Pull from picsum.photos + upload
+│   └── optimize-hero-examples.mjs # Regenerate 540/720 WebP companions for public/examples/hero-*.png
 └── tests/
+    ├── smoke.test.ts             # Bouncer suite — 7 critical-path checks, < 400 ms
+    ├── client/                   # Browser/jsdom specs (use `// @vitest-environment jsdom`)
+    └── server/                   # Node specs incl. generate-integration.test.ts (full pipeline)
 ```
 
----
+**Test naming**: when adding cases to an existing module, create `<module>-extended.test.ts` rather than bloating the original file. Convention: the primary `<module>.test.ts` covers smoke-shaped basics (one or two cases per public function); the `-extended.test.ts` covers exhaustive boundaries, edge cases, and mutation-kill assertions. **Never duplicate the same assertion across the pair** — if extended pins a 60-char boundary with paired `accepts exactly 60` + `rejects 61` tests, do not also add `returns null when line1 exceeds 60` to the primary file. Cross-pair duplicates were removed in `audit-reports/05_TEST_CONSOLIDATION_REPORT_001_*.md`; don't reintroduce them.
 
-## Build & Run Commands
-
-```bash
-npm run build                    # Vite production build
-npx tsc -b --noEmit              # Type check only
-npm run lint                     # ESLint
-npm run lint:photos              # CI lint on photos.json
-npm test                         # Vitest
-npx vitest run src/path/to/file.test.ts  # Single test file
-
-# Deploy: auto via Netlify on push to main
-# Local dev
-netlify dev                      # Netlify dev server + functions
-```
+**`src/server/` is critical**: anything imported into a `src/server/*` file must NEVER be imported by client code. Mixing breaks the security boundary (e.g., bundling `slur-list.ts` to the browser leaks the moderation list).
 
 ---
 
 ## Environment Variables
 
-### Frontend (`.env.local`)
-```
-VITE_FIREBASE_STORAGE_BASE_URL=
-VITE_POSTHOG_KEY=
-VITE_POSTHOG_HOST=
-```
+Frontend uses `VITE_` prefix (Vite-exposed). Backend vars live in Netlify dashboard.
 
-### Backend — Netlify Functions (env vars in Netlify dashboard)
-```
-ANTHROPIC_API_KEY=               # NEVER expose to browser
-ANTHROPIC_MODEL_GEN=             # e.g., claude-sonnet-4-6
-ANTHROPIC_MODEL_SAFETY=          # e.g., claude-haiku-4-5
-FIREBASE_PROJECT_ID=
-FIREBASE_CLIENT_EMAIL=
-FIREBASE_PRIVATE_KEY=
-FIREBASE_STORAGE_BUCKET=
-RATE_LIMIT_PER_HOUR=             # default 25; set 9999 for local dev
-IP_SALT_BASE=
-```
+**Frontend** (`.env.local`): `VITE_FIREBASE_STORAGE_BASE_URL`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST`
+
+**Backend**: `ANTHROPIC_API_KEY` (NEVER exposed), `ANTHROPIC_MODEL_GEN` (default `claude-sonnet-4-6`), `ANTHROPIC_MODEL_SAFETY` (default `claude-haiku-4-5`), `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (newlines escaped as `\\n`), `FIREBASE_STORAGE_BUCKET`, `RATE_LIMIT_PER_HOUR` (default 25, set `9999` to bypass locally; misconfigs — `NaN`, negative, zero, empty — also fall back to 25 via `parseRateLimit()` in [`src/server/rateLimit.ts`](src/server/rateLimit.ts), pinned by the `RATE_LIMIT_PER_HOUR misconfiguration falls back to default 25` block in [`tests/server/rateLimit-extended.test.ts`](tests/server/rateLimit-extended.test.ts) — the previous raw `parseInt` silently disabled the limiter on `'abc'` and silently blocked every first-hit on `'-5'`/`'0'`), `IP_SALT_BASE`, `ENABLE_TONE_CHECK` (set `false` to skip Haiku tone check), `ALLOWED_ORIGINS` (comma-separated browser-Origin allowlist for the CSRF shield in `generate.ts`; **unset = no-op**, so it MUST be set in production deploys e.g. `https://blessyourheart.app`). **New backend env vars MUST go through a defensive parser** (mirror `parseRateLimit`'s `Number.isFinite && > 0` shape for ints; allowlist literals for booleans like `ENABLE_TONE_CHECK === 'false'`) — bound the misconfig blast radius before the value reaches business logic. Audit run 24/001 added the rate-limit parser; extend the pattern to any new numeric env var
+
+See [`.env.example`](.env.example) for the canonical template and [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for the full surface area (kill switches, change-latency table, missing-toggle inventory).
+
+**Production-required env vars are checked at lambda cold-start by `validateProdEnv()` in [`src/server/configValidation.ts`](src/server/configValidation.ts)** — when `process.env.CONTEXT === 'production'` (Netlify's prod marker) and any of `IP_SALT_BASE`, `ALLOWED_ORIGINS`, `ANTHROPIC_API_KEY`, or the three `FIREBASE_*` keys are missing/empty, a single structured `config_validation_failed` log line is emitted listing the offenders. **The validator does NOT throw** — see the `Why we don't throw` § in [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md). When adding a new production-required env var, append it to `REQUIRED_PROD_VARS` AND mark `[REQ-PROD]` in [`.env.example`](.env.example) AND add a row to the *Required-in-production variables* table in `docs/CONFIGURATION.md` — three places, single source of truth via the validator. Audit run 38/001 added the validator after carry-over from runs 20/001 #5, 20/002 #1, 24/001 #D1, 33/001 #3
 
 ---
 
-## Key Architectural Rules
+## Architectural Rules
 
 ### Frontend
 
-- **Single page app** — one route, no router needed
-- **Canvas compositing** — native Canvas API, NOT html2canvas. Pixel-perfect text required
-- **Font loading** — `await document.fonts.ready` before any `measureText()` or `fillText()`
-- **Shadcn/UI** — use for all interactive elements. Never inline raw `<button>` or `<input>`
-- **No dark mode** — cream palette IS the brand
-- **Input persistence** — `sessionStorage` key `byh:lastPrompt`
-- **Minimum anticipation beat** — 800ms loading state even if API returns faster
+- **Single page app** — no router. State machine in [`App.tsx`](src/App.tsx) drives `PosterPhase` (`idle | loading | settled | error`). The `revealing` branch was removed in audit run 22/001 — no producer ever emitted it and no consumer narrowed on it
+- **Native Canvas API for compositing** — NEVER use html2canvas. Pixel-perfect serif text is required; raster libraries blur it
+- **ALWAYS `await ensureFontsReady()` before `measureText()` or `fillText()`** — falling back to system serif silently breaks the joke. Helper lives in [`src/lib/fonts.ts`](src/lib/fonts.ts) and lazy-caches the promise
+- **Shadcn Button is mandatory for all `<button>` interactions** — variants: `primary | secondary | preset | ghost`. Never inline raw `<button>` (the [`PromptInput`](src/components/PromptInput.tsx) raw `<input>` is intentional — Shadcn `Input` doesn't apply the same serif placeholder treatment)
+- **Every `Button` rendered inside a `<form>` MUST set its `type` explicitly** — HTML defaults a typeless `<button>` inside a form to `type="submit"`. The [`Button`](src/components/ui/button.tsx) CVA renders a vanilla `<button>` and does not currently default the type, so any `<Button>` in the prompt form without `type="button"` becomes a submit button. Pre-fix audit run 35/001, every preset chip in [`PresetButtons.tsx`](src/components/PresetButtons.tsx) inherited `type="submit"`: clicking a preset fired the form's `onSubmit` *alongside* the React `onClick`, generating a poster against whatever `prompt` value the `handleGenerate` closure had captured at the previous render — same vector audit run 29/001 closed for the Generate button itself. Today only `GenerateButton` should be `type="submit"`; every other `<Button>` in [`App.tsx`](src/App.tsx)'s form (presets, regenerate, download — though the latter two render outside the form anyway) needs `type="button"`. **The systemic fix is to default `Button` to `type="button"` and have `GenerateButton` opt into `type="submit"`** — track that in the audit's priority table; until then, audit any new `<Button>` placed inside a `<form>` for an explicit `type`
+- **No form library** — [`PromptInput`](src/components/PromptInput.tsx) uses bare `useState` + a single `<input maxLength={200}>` with `sessionStorage` debouncing. `react-hook-form` and `@hookform/resolvers` were declared in the original spec ([`PRD/01_Tech_Stack.md`](PRD/01_Tech_Stack.md)) but never wired in and were removed in NightyTidy step 11 (audit-reports/11_DEPENDENCY_HEALTH_REPORT_001). **Do not reintroduce them** — a single textarea doesn't need form-state management. Server-side validation lives in `zod` ([`src/server/validation.ts`](src/server/validation.ts))
+- **No dark mode** — cream palette IS the brand. Never introduce `dark:` variants
+- **Custom Tailwind utilities live in `src/styles/globals.css` `@layer utilities`, never as bare class names in components** — Tailwind silently ignores classes it doesn't know, so a class like `scrollbar-none` (or any other "looks Tailwind-y" utility you wish existed) renders nothing if not defined. Pre-fix audit run 35/001, [`PresetButtons.tsx`](src/components/PresetButtons.tsx) used `scrollbar-none` expecting the horizontal scrollbar under the preset chip row to hide — Tailwind has no such utility, the class was dropped, and the scrollbar rendered under the row on every Windows browser plus macOS in always-show mode. The cross-browser hide rule (`scrollbar-width: none` + `-webkit-scrollbar { display: none }`) now lives in [`globals.css`](src/styles/globals.css) alongside `text-poster-light`/`text-poster-dark`. **When you reach for a custom utility, define it in globals.css with a comment referencing the consumer**, the same pattern this rule and the existing `text-poster-*` utilities follow
+- **Never use red for errors** — use `feedback-quiet` (`#D9D4C8`)
+- **`sessionStorage` key for prompt persistence**: `byh:lastPrompt` (300ms debounce). **Restored values MUST be truncated to `MAX_PROMPT_LENGTH`** before being passed to `onChange` — the browser's `<input maxLength>` only enforces user typing, not programmatic sets, so a tampered or stale key with >200 chars would bypass the cap and the user would silently 400 on submit. [`PromptInput.tsx`](src/components/PromptInput.tsx) does `onChange(saved.slice(0, MAX_PROMPT_LENGTH))` on the restore effect (added in audit run 24/001). Apply the same pattern to any future programmatic prompt-set path
+- **800ms minimum anticipation beat** — `LOAD_FLOOR_MS` in [`App.tsx`](src/App.tsx). Even instant API responses must wait. **The hold MUST do useful work, not wait empty** (audit run 37/001): the photo prefetch fires inside `handleGenerate` BEFORE the `await sleep(remaining)` so the photo HTTP fetch overlaps the anticipation beat. By the time the hold ends and PosterCanvas mounts, `loadImage()` hits the warm cache and decode resolves in ~30 ms instead of waiting 200–2000 ms on a cold fetch. **If you ever add new "wait for it" beats** (post-generation reveal animations, intentional UX pacing, etc.), audit what work could overlap them — empty waits are wasted user-perceived time
+- **Reserve the eventual layout footprint during loading states, don't `py-12` a thin loading container** — pre-fix audit run 37/001, [`PosterReveal.tsx`](src/components/PosterReveal.tsx)'s `loading` branch rendered `<div className="text-center py-12">` (~60–100 px tall) and the `settled` branch replaced it with the 360–540 px-tall canvas → 300–450 px CLS-inducing layout shift the moment the API resolved. Post-fix, the loading container matches PosterCanvas's `computeSize()` breakpoints exactly: `<640 → min(viewport-32, 360)`, `640–1023 → 480`, `≥1024 → 540` — applied via Tailwind arbitrary values `aspect-square w-[min(calc(100vw-2rem),360px)] sm:w-[480px] lg:w-[540px]`, with `flex items-center justify-center` centering the loading phrase inside the reserved square. The shape MUST track PosterCanvas's breakpoints exactly — drift here re-introduces the CLS. **Apply this pattern to ANY future async-loaded UI surface** (lazy charts, embed previews, anything where the eventual size differs from the placeholder size) — measure the eventual footprint and reserve it in the placeholder. Layout stillness is a large slice of perceived snappiness
+- **Critical-path JS is split across multiple chunks via `manualChunks` in [`vite.config.ts`](vite.config.ts) (audit run 37/001)** — single-bundle architecture (467 KB / 151 KB gzip pre-fix) had two flaws: every app deploy busted the entire vendor cache, and PostHog (~62 KB gzip) sat front-of-paint despite being non-critical observation. Post-fix, the build emits separate content-hashed chunks: `react-vendor` (React + ReactDOM, ~56 KB gzip), `radix` (@radix-ui/* — only loaded when CreditsDialog or DistressInterstitial mounts, ~15 KB gzip), `module` (PostHog — only loaded after first paint via `requestIdleCallback`, ~62 KB gzip), and the small `index` app chunk (~20 KB gzip). Critical-path shrunk from 151 KB gzip → 76.57 KB gzip (-49%); returning users on an app-only deploy re-download ~20 KB gzip instead of 151 KB. **`manualChunks` in vite.config.ts MUST be the function form** (`(id) => string | undefined`) — Vite is on rolldown, not rollup, and the legacy object form throws `TypeError: manualChunks is not a function` at build time. **Adding a new vendor chunk**: extend the `manualChunks` callback in [`vite.config.ts`](vite.config.ts); tree-shake the dep into its own chunk only if it's >20 KB gzip raw (smaller chunks pay HTTP overhead larger than the gzip win). **Adding a new lazy component**: use `React.lazy(() => import('@/components/X'))` + `<Suspense fallback={null}>`; consider a hover/focus prefetch pattern like [`CreditsDialog.tsx`](src/components/CreditsDialog.tsx) if the trigger has measurable hover-to-click latency. The four lazy chunks today are `DistressInterstitial`, `CreditsDialogContent`, `dialog` (UI wrapper), and the `radix`/`posthog` vendor chunks they depend on — do NOT eagerly import any of them from main-bundle code or you'll silently pull them back into the critical path
+
+- **rAF-throttle window event listeners** — `resize`, `scroll`, `pointermove` etc. fire 60+/sec. Without throttling, every fire flows into `setState` → re-render → expensive child effects (e.g. `PosterCanvas` re-decodes the photo + redraws the canvas on every fire). Use the `requestAnimationFrame` coalesce pattern in [`PosterCanvas.tsx`](src/components/PosterCanvas.tsx): one outer `frame` handle, early-return if a frame is queued, set `frame=0` inside the rAF callback, `cancelAnimationFrame` in the cleanup. Pair with `{ passive: true }` so the listener doesn't block scroll on touch devices. Audit run 25/001 added this for `resize`; apply the same shape to any future window listener
+- **Cleanup `setTimeout` handles on component unmount** — anywhere a component arms a `setTimeout` to update its own state later (auto-reset banners, debounced writes, animation pacing), capture the handle in a `useRef` and clear it in a cleanup `useEffect`. Without cleanup, a component that unmounts mid-timer (the regen flow remounts `DownloadButton`/`PosterCanvas` whenever the user re-rolls from `settled`) fires `setState` on a dropped instance and, under StrictMode, dispatches duplicate side-effects on the dev double-mount. Pinned in [`PromptInput.tsx`](src/components/PromptInput.tsx) (`debounceRef`) and [`DownloadButton.tsx`](src/components/DownloadButton.tsx) (`resetRef`) by audit run 25/001
+- **Hero example images use `<picture>` with WebP + PNG fallback** — [`HeroExamples.tsx`](src/components/HeroExamples.tsx) renders `<picture><source type="image/webp" srcSet={hero-N-{540|720}.webp}><img src={hero-N.png} width=... height=...></picture>`. The `.webp` companions in `public/examples/` are the canonical assets (≤170 KB each); the `.png` files are paranoid fallback for the <2% of browsers without WebP support. Pre-fix the three PNGs (~6.85 MB total) shipped eagerly with `fetchPriority="high"` on every page load and dominated total bandwidth — desktop hit was 7 MB before the SPA bundle even arrived; the WebP companions cut that 92.5% (515 KB across all sizes). Always set explicit `width`/`height` on the `<img>` to prevent CLS. **When swapping a hero image**: drop the new PNG into `public/examples/`, run `node tools/optimize-hero-examples.mjs` to regenerate the 540/720 WebP companions, then commit all four files together (PNG + both WebPs). The 1-year `Cache-Control: immutable` header on `/examples/*` (in [`netlify.toml`](netlify.toml)) is safe because the responsive widths are filename-versioned. Audit run 26/001. **Run 37/001 added a viewport-conditional render**: pre-fix the desktop grid (3 imgs) and mobile single-image set both rendered into the DOM with one hidden via `hidden lg:grid` / `lg:hidden` — Safari fetched all hidden `<img>` regardless, Chrome/Firefox depended on browser version (and `loading="eager" fetchPriority="high"` overrides the display:none-skip optimization). Mobile users were paying ~210 KB for three unused desktop WebPs and desktop users ~75 KB for the unused mobile WebP. Post-fix, [`HeroExamples`](src/components/HeroExamples.tsx) snapshots `window.matchMedia('(min-width: 1024px)').matches` ONCE at mount via `useState(detectIsDesktop)` and renders only the visible viewport's markup. **The mount-once choice is deliberate** — reactive subscription would re-fetch hero assets on every breakpoint cross during a window drag, worse than keeping the layout sticky. **For ANY future viewport-fork rendering** (responsive image sets, layout variants), prefer the JS-driven mount-once snapshot over `display:none` CSS hide — the unwanted markup never enters the DOM, so the unwanted image never enters the network
+- **Photo-CDN preconnect lives in [`index.html`](index.html)** — `<link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin>` so the DNS + TCP + TLS handshake to the photo CDN runs during HTML parse instead of after the user clicks Generate. The `crossorigin` attribute is **required** — `loadImage()` in [`src/lib/compositor.ts`](src/lib/compositor.ts) sets `img.crossOrigin = 'anonymous'`, and the preconnect must match or the browser opens a second (untrusted) connection. **If the photo host ever changes**, update the `<link rel="preconnect">` host AND `getPhotoUrl()` in [`src/lib/photos.ts`](src/lib/photos.ts) AND the `img-src` allowlist in the Report-Only CSP in [`netlify.toml`](netlify.toml) — all three reference the same origin and silently drift apart if edited individually. Added in audit run 25/001
+- **Client fetch timeout** — `callGenerate` in [`src/lib/api.ts`](src/lib/api.ts) sets `signal: AbortSignal.timeout(GENERATE_FETCH_TIMEOUT_MS)` (30s). Netlify lambda kill is 10–26s, so this only fires when the response stream hangs past that (CDN edge weirdness, mid-stream lambda crash). Without the signal a hung body would pin the user's tab indefinitely. Pinned by `attaches an AbortSignal to the fetch call` in [`tests/client/api.test.ts`](tests/client/api.test.ts) — do not drop the `signal` field when refactoring `callGenerate`
+- **Photo loads MUST go through `loadImage()` from [`src/lib/compositor.ts`](src/lib/compositor.ts), never bare `new Image()` + `img.decode()`** — the wrapper races `decode()` against a `IMAGE_LOAD_TIMEOUT_MS = 15_000` setTimeout, clearing the handle in `finally` (mirrors the `setTimeout`-in-`Promise.race` pattern in `generate.ts`). Without the timeout, a stalled photo CDN (DNS hang, TLS failure, dropped socket on degraded mobile) leaves `decode()` pending forever — the user sees a successful `gen_ok` API response, watches the spinner clear, and is then stranded on a blank `<canvas>` indefinitely with no error and no retry. Compounded by [`PosterCanvas.tsx`](src/components/PosterCanvas.tsx)'s `onFitFailure?.()` callback being unwired before audit run 27/001, which made the catch handler a silent no-op even when the underlying error did surface. Fix shape: timeout in `loadImage`, plus `onCanvasFailure` plumbed [`PosterReveal`](src/components/PosterReveal.tsx) → [`App.tsx`](src/App.tsx) so the state machine transitions to `error` with `errorCopy.frontend.canvasWriteFailed` and a retryable affordance. **When adding any new image-fetch path on the client (alternate photo CDN, share-card preview, anything else awaiting `decode()`), use `loadImage()` and respect `onFitFailure`/`onCanvasFailure` — declaring a callback you never wire is the regression run 27/001 closed**. Pinned by the four `loadImage` cases in [`tests/client/compositor.test.ts`](tests/client/compositor.test.ts) covering success, timeout, clearTimeout cleanup, and decode-error propagation. **One legitimate exception is `prefetchPhoto()` in [`src/lib/photos.ts`](src/lib/photos.ts)** (audit run 37/001) — fire-and-forget warm of the browser HTTP cache during the LOAD_FLOOR_MS hold so PosterCanvas's eventual `loadImage()` hits a warm cache and skips the network round-trip (saves 200–2000 ms of perceived blank-canvas wait). It uses bare `new Image()` because we deliberately do NOT want the `decode()` race or timeout — we just want the bytes in cache, no observable side-effect on success or failure. **Critical contract**: `prefetchPhoto`'s `img.crossOrigin = 'anonymous'` MUST match `loadImage()`'s same setting or the browser's HTTP cache key (URL + crossOrigin + mode) won't align and the photo downloads twice — the entire optimization is wasted. Pinned by `prefetchPhoto creates an Image with crossOrigin="anonymous" and the photo URL` in [`tests/client/photos.test.ts`](tests/client/photos.test.ts). Fired from [`App.tsx`](src/App.tsx)'s `handleGenerate` the moment a `photoId` is known (status `ok` or `safe_fallback`) — runs in parallel with the LOAD_FLOOR_MS sleep
+- **In a React effect that uses `await` + a `cancelled` cleanup flag, check `cancelled` after EVERY await — not just before the obvious state mutation** — every `await` is a re-entry point where the closure can resume *after* the cleanup function set `cancelled = true`. Pre-fix, [`PosterCanvas.tsx`](src/components/PosterCanvas.tsx)'s image-load effect checked `cancelled` only after `await loadImage(...)`, missing the gap after `await ensureFontsReady()` and after `await checkFit(...)`. The Regenerate button is reachable from `settled` phase **before the canvas finishes drawing** (it renders in the same `state.phase === 'settled'` branch as `PosterCanvas` in [`PosterReveal.tsx`](src/components/PosterReveal.tsx)), so unmount-during-`checkFit` is a real, not theoretical, scenario: the unmounted effect would call `onFitFailure?.()` (when `!fit.ok`), routing through [`App.tsx`](src/App.tsx)'s `handleCanvasFailure` and overwriting the freshly-set `loading` posterState with `error` — flashing a stale error over the new generation. Watch for this anywhere a parent-callback prop is invoked from inside an awaited closure (`onReady?.()`, `onFitFailure?.()`, etc.) — the call looks cheap but re-enters parent state. Fix shape: a one-line `if (cancelled) return;` after every `await` in the chain, including ones that don't immediately precede a state mutation. Audit run 28/001
+- **Parent-tracked `ready`/`loaded` flags set via a child callback MUST reset when the parent leaves the phase that observes them** — pre-fix, [`PosterReveal.tsx`](src/components/PosterReveal.tsx) tracked `canvasReady: boolean` set true by [`PosterCanvas`](src/components/PosterCanvas.tsx)'s `onReady` callback (fired after the async draw pipeline: fonts → image → checkFit → composite). The scroll-into-view effect was gated on `state.phase === 'settled' && canvasReady`. On regenerate (`settled → loading → settled` with new poster), the parent transitioned away from `settled` but `canvasReady` was never reset — so the moment the new `settled` landed, the gate passed against the stale `true` and `scrollIntoView` fired ~100–1000ms before the freshly-mounted PosterCanvas finished drawing. User got smoothly scrolled to a blank canvas, then watched it fill in. Fix shape: separate `useEffect` flipping `canvasReady` back to `false` whenever `state.phase !== 'settled'`. The fresh-mount draw's `onReady` then flips it back to true, and only then does the scroll fire — against the fully-drawn poster. **Apply to ANY parent-tracked "child has finished an async pipeline" boolean** (canvas-ready, image-loaded, animation-finished, lazy-load-complete) — without the reset, the flag records "*was* ready once," not "*is* ready now," and any side effect gated on it (scroll, transition, analytics) will fire against stale state on the next phase re-entry. The `cancelled`-flag pattern (audit 28/001) handles the *child* side of unmount-during-async; this rule handles the *parent* side of ready-flag persistence. Audit run 36/001
+- **User-initiated async work that mutates shared state needs a synchronous `useRef` mutex, not a state-derived guard** — `<button type="submit">` inside a `<form onSubmit>` fires React's `onClick` AND the browser's submit event in the same event-loop tick. Both invocations evaluate any state-derived guard (`canGenerate = !isGenerating`) against the SAME closure captured at render N — `setLoading(true)` does not update `loading` synchronously, so the second invocation in the same tick still sees `loading=false`, passes the guard, and fires the work twice. For [`App.tsx`](src/App.tsx)'s `handleGenerate` pre-fix this meant a single Generate-button click made TWO `callGenerate` requests (~2× Anthropic spend per click) plus a stale-response overwrite race when the two responses arrived in arbitrary order. Fix shape: pair an `inFlightRef = useRef(false)` synchronous mutex (checked AND set BEFORE the state-derived guard, cleared in a `finally` so a thrown exception can't jam the button) with a `generationIdRef = useRef(0)` stale-response token (`const myId = ++generationIdRef.current` at start; `if (myId !== generationIdRef.current) return;` after every `await`). Mutex ownership is held by the LATEST generation only — stale generations early-return without releasing, the current generation's `finally` releases (`if (myId === generationIdRef.current) inFlightRef.current = false`). The token also closes the network-reorder case if a future refactor ever permits two in-flight requests. **Apply this pattern to ANY new user-initiated async work that mutates app-level state** — a form-submit + button-onClick double-fire is a guaranteed regression vector for `<button type="submit">` inside a `<form onSubmit>`. Either gate at the handler with the ref-mutex, or remove one of the two triggers (but accessibility usually requires both — Enter-key submit needs the form handler; click needs the onClick). Audit run 29/001
+- **Non-critical client SDK calls (analytics, telemetry) MUST be wrapped in try/catch — failures must NEVER propagate into the user flow** — pre-fix, [`initAnalytics`](src/lib/analytics.ts) called `posthog.init(...)` raw and [`track`](src/lib/analytics.ts) called `posthog.capture(...)` raw. Both can throw on locked-down browsers (Safari Private Mode and Brave hard mode block sessionStorage; corporate kiosks restrict third-party DOM listeners). [`initAnalytics`](src/lib/analytics.ts) is invoked from [`main.tsx`](src/main.tsx) BEFORE React mounts — an unhandled throw there would crash the bootstrap and the user would see a blank page because an analytics SDK couldn't access storage. Worse, [`track()`](src/lib/analytics.ts) is called synchronously from inside [`handleGenerate`](src/App.tsx) (`prompt_submitted`) and at every terminal branch of the generation flow (`generation_distress`, `generation_blocked`, `generation_rate_limited`, `generation_completed`, `generation_safe_fallback`, `generation_error`, `regenerate_clicked`, `canvas_render_failed` — 9 sites total) — a throw from any of them would abandon the user mid-generation because an analytics call failed. Fix shape: `try { posthog.X(...) } catch (err) { console.error(JSON.stringify({ event: 'analytics_X_failed', error: String(err) })); }` — same swallow-and-log pattern that the Anthropic safety classifiers use (`tone_check_failed`, `distress_check_failed`). PostHog is **Low criticality** in the failure-mode classification — analytics is observation, not function; the right behavior is "skip gracefully" not "crash." **Apply this pattern to ANY future non-critical client SDK** (Sentry capture, Statsig flag eval, Segment track, alternate analytics) — they're all attractive nuisances because the SDK looks "infallible." Pinned by `swallows posthog.capture errors` and `swallows posthog.init errors` in [`tests/client/analytics.test.ts`](tests/client/analytics.test.ts). Audit run 33/001
+- **Module-level lazy-init singletons MUST flip their `initialized` flag SYNCHRONOUSLY before any async setup — never inside an async-completion callback** — pre-fix audit run 30/001, [`initAnalytics`](src/lib/analytics.ts) set `initialized = true` inside the `loaded` callback that `posthog.init()` invokes after its network/script init completes. Between the synchronous `posthog.init(...)` call and the loaded callback firing — easily milliseconds, hundreds of ms on slow networks — a re-entrant `initAnalytics()` invocation would pass the `if (initialized) return` guard and call `posthog.init()` a SECOND time. posthog-js does not document idempotency on double-init: each call attaches its own pageview / `beforeunload` listeners, so the duplicate produces duplicate pageview captures (analytics inflated 2× per affected user) plus duplicate session-end events. Fix shape: flip the flag at the top of the function, BEFORE any `.init()` / lazy-import / network call. Mirrors the lazy-init pattern in [`getAnthropicClient`](src/server/anthropic.ts) and `getDb` in [`firebaseAdmin.ts`](src/server/firebaseAdmin.ts) — both set their cached reference before returning. **Apply this pattern to ANY future module-level singleton with async setup (Sentry init, Firebase Auth init, alternate analytics SDK)** — the async-flag-flip is an attractive nuisance because the SDK provides a "loaded" callback right there. **Audit run 37/001 evolved the shape into a five-state machine** (`pending → inactive | loading → active | failed`) when posthog-js itself was promoted to a lazy `import('posthog-js')` deferred via `requestIdleCallback` (cuts ~62 KB gzip from the critical path). The synchronous flip is now `initState = 'loading'` BEFORE the deferred import schedules — same idempotency contract holds. Events fired BETWEEN `initAnalytics()` returning the (now-Promise) and the SDK actually landing are buffered in a module-level `eventQueue` (capped at `EVENT_QUEUE_MAX = 50` to bound a stuck-load scenario) and flushed in enqueue order on the `loading → active` transition; on `loading → failed` the queue is dropped (no late flush, no future captures). Pinned by the `does not double-init when called twice synchronously without simulating posthog load`, `buffers track() calls fired during the loading window and flushes on SDK load`, `drops events past EVENT_QUEUE_MAX while loading`, and `drops events when init fails — no late flush, no later captures` blocks in [`tests/client/analytics.test.ts`](tests/client/analytics.test.ts). The call site in [`main.tsx`](src/main.tsx) is `void initAnalytics()` (fire-and-forget) — preserving the same "no top-level await" boot path. Run 37/001
+- **User-facing copy lives in [`src/content/`](src/content/)** — never hardcode user-facing strings in components OR in the Netlify function. [`copy.ts`](src/content/copy.ts) exports `errorCopy` (in-voice errors), `loadingPhrases`, `downloadConfirmation`, `downloadCopy` (iOS save hint), and `distressCopy` (crisis interstitial); [`presets.ts`](src/content/presets.ts) and [`placeholders.ts`](src/content/placeholders.ts) cover the prompt input. **`distressCopy` is intentionally OUT of the wellness-influencer voice** — when someone may be in crisis the joke ends; do not "fix" its tone to match `errorCopy`. The Netlify function imports `errorCopy` from `@/content/copy` for the `rate_limited`, `blocked` (slur), and `blocked` (real-person) response messages — pinned by the `errorCopy parity` block in [`tests/server/generate-contract.test.ts`](tests/server/generate-contract.test.ts) (audit run 22/001 eliminated the prior literal-duplication pattern; run 23/001 centralized the distress + iOS-hint strings). Full inventory + voice style guide in [`docs/ERROR_MESSAGES.md`](docs/ERROR_MESSAGES.md) — read it before adding a new error path or rewording an existing one
+- **A11y conventions for new components (audit run 34/001)** — these are non-negotiable on every new UI surface, not "nice to have":
+  - **Radix `DialogContent` MUST contain a `DialogTitle` and (if there's body copy) a `DialogDescription`** — without them Radix logs `DialogContent requires a DialogTitle for the component to be accessible for screen reader users` and the modal announces with no name. Pre-fix [`DistressInterstitial.tsx`](src/components/DistressInterstitial.tsx) wrapped its headline/body in plain `<p>` — the highest-stakes modal in the product (fires when a user may be in crisis) was the worst Level A violation. Style overrides go on the `DialogTitle`/`DialogDescription` `className`, not on a sibling `<p>`. **Any new dialog MUST use these primitives** even if you're overriding the visual styling completely.
+  - **Dynamic content needs a live region**. Loading/status copy → `role="status" aria-live="polite"` (announces without interrupting). Error/blocking copy → `role="alert"` (announces immediately, interrupts). Wired into [`PosterReveal.tsx`](src/components/PosterReveal.tsx) (loading + error), [`App.tsx`](src/App.tsx) inline error, and [`DownloadButton.tsx`](src/components/DownloadButton.tsx) (single wrapping `aria-live="polite" aria-atomic="true"` container around iOS-hint / success / error siblings — one live region across multiple states is correct, three sibling live regions race each other).
+  - **A button that ever renders without visible text MUST carry an `aria-label` (and `aria-busy` if the empty state is transient)**. [`GenerateButton.tsx`](src/components/GenerateButton.tsx) renders empty while `loading=true` (the anticipation beat lives in `PosterReveal`) — pre-fix screen readers announced just *"button"*. Same applies to any future "icon-only while busy" affordance.
+  - **Decorative `lucide-react` icons next to visible text MUST carry `aria-hidden="true"`** — the visible text is the accessible name; an icon next to it duplicates the announcement on some AT (especially VoiceOver in browse mode). All four current call sites are wired (`Sparkles`, `Download`, `RefreshCw`, the Dialog `X`).
+  - **`focus-visible:*` not `focus:*`** — matches Button/Input/Textarea throughout. `focus:` triggers the ring on mouse click too, leaving stale rings after click→close→reopen cycles. Pinned at the dialog close button after audit 34/001.
+  - **`ring-offset-{surface}` MUST match the parent surface color** — `ring-offset-cream` for body backgrounds, `ring-offset-paper` inside `DialogContent` (which has `bg-paper`) or any future `bg-paper` surface. Pre-fix the dialog close button used `ring-offset-cream` against a `bg-paper` parent — the offset rendered as a stripe of the wrong color when focused. When you add a new focusable control, audit the offset against its actual rendered background.
+  - **Text-style `<a>` links MUST carry the same focus-visible ring as buttons** — the Button CVA wires this for every `<button>`, but raw `<a>` elements styled as inline links don't get it for free. Pre-audit-35/001, the header brand link, footer `tel:988`, and footer `findahelpline.com` all had `hover:` styles but no `focus:` or `focus-visible:` styles — keyboard users got either the browser default outline (Chrome/Firefox) or **nothing visible** depending on UA, a WCAG 2.4.7 violation. Fix shape: `rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-sage/50 focus-visible:ring-offset-2 focus-visible:ring-offset-{cream|paper}` (offset color matches the link's parent surface — `cream` for header, `paper` for footer). The `rounded-sm` exists so the ring has a corner radius even on a text-link with no background. **Apply this pattern to any new text-style anchor in the rendered app** — the Button CVA does not cover `<a>`. Pinned in [`Header.tsx`](src/components/Header.tsx), [`Footer.tsx`](src/components/Footer.tsx), and [`CreditsDialog.tsx`](src/components/CreditsDialog.tsx) by audit run 35/001.
+  - The long-form catalog (including known WCAG-AA contrast gaps on `text-feedback-quiet` / `accent-sage` that are intentional brand decisions, not bugs) lives in [`audit-reports/34_FRONTEND_QUALITY_REPORT_001_2026-05-04_2014.md`](audit-reports/34_FRONTEND_QUALITY_REPORT_001_2026-05-04_2014.md); the UI design quality audit (visible scrollbar fix, anchor focus rings, preset-button form-submit fix) lives in [`audit-reports/35_UI_DESIGN_QUALITY_REPORT_001_2026-05-04_2029.md`](audit-reports/35_UI_DESIGN_QUALITY_REPORT_001_2026-05-04_2029.md) with the as-is design system in [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md)
+- **Cormorant Garamond ships only the `latin` subset** — [`main.tsx`](src/main.tsx) imports `@fontsource/cormorant-garamond/latin-400.css`, `latin-500.css`, and `latin-400-italic.css`. Do **NOT** swap to the all-subsets entry (`400.css`, `500.css`, `400-italic.css`) — that pulls Cyrillic, Cyrillic-ext, Latin-ext, and Vietnamese `@font-face` declarations into the CSS bundle and copies ~24 unused woff/woff2 files into `dist/assets`. The `latin` subset (basic Latin + ISO Latin-1 Supplement) covers English plus virtually all Western-European accented characters (café, naïve, résumé, ñ, ç, etc.); anything outside that range falls back to Georgia (the fallback was already in the `font-family` chain for any glyph the font lacked). **If the product ever supports a non-Latin language**, add the relevant subset entries (`latin-ext-*`, `cyrillic-*`, etc.) — and re-run a build to verify which subsets are actually shipped. Audit run 34/001 trimmed CSS 20.04 → 15.78 KB raw and dropped 24 unused font files from the build artifacts; pinned by the absence of the corresponding CSS `@font-face` blocks (`grep -c '@font-face' dist/assets/index-*.css` should return `6`, one per ship-able weight/format)
 
 ### Backend
 
-- **Single endpoint** — `POST /.netlify/functions/generate`
-- **Filter order (cost-optimized)**: rate-limit → slur filter → real-person filter → distress check (Haiku) → generation (Sonnet) → tone check (Haiku)
-- **Never log prompt or output content** — only event types and metadata
-- **Rate limit**: 25/hour per hashed IP, Firestore transaction, TTL auto-delete
-- **Retry budget**: 2 retries max, then safe fallback. User never sees raw error
-- **Local dev bypass**: set `RATE_LIMIT_PER_HOUR=9999`
+- **Single endpoint**: `POST /.netlify/functions/generate`
+- **Filter pipeline (cost-ordered, `netlify/functions/generate.ts`)**:
+  1. Method check (POST only — others return `405`)
+  2. **Origin allowlist** (CSRF shield via `ALLOWED_ORIGINS` — see below)
+  3. Zod validation of body
+  4. Rate-limit check (Firestore txn, 3s timeout, fails open on error)
+  5. Slur word-list (free)
+  6. Real-person regex (free; `PUBLIC_FIGURES` array currently empty)
+  7. Distress phrase list (free, server-only)
+  8. Distress Haiku classifier (only if phrase list misses)
+  9. Generation loop: Sonnet → Zod parse → specificity (lexical) → tone (Haiku) — up to 2 retries
+  10. Photo selection (3-rung fallback)
+  11. Safe fallback if generation/selection both fail
+- **CSRF Origin shield** (`isOriginAllowed` in [`generate.ts`](netlify/functions/generate.ts)): when `ALLOWED_ORIGINS` env var is set (comma-separated origins), browser POSTs whose `Origin` header is not in the list get `403 { status: 'error' }`. Unset = no-op (back-compat). Missing Origin = pass-through (server-to-server clients omit it). Origins are compared case-insensitively. **Do not remove this guard or default it to deny** — it's the only protection against cross-origin Anthropic-spend abuse. Behavior pinned by `contract — Origin allowlist (CSRF shield)` block in [`tests/server/generate-contract.test.ts`](tests/server/generate-contract.test.ts)
+- **NEVER log prompt or output content** — log only event types: `gen_ok` (with `duration_ms`, `retries`, `fittingRung`, `model`), `gen_block` (with `reason: 'slur' | 'real-person' | 'origin'`), `gen_distress`, `gen_rate_limited`, `gen_retry`, `gen_safe_fallback`, `gen_anthropic_error` (with `status`, `attempt`), `gen_parse_failed`, `rate_limit_check_failed`, `tone_check_failed` (with `status`), `distress_check_failed` (with `status`), `config_validation_failed` (with `missing[]`, `context` — emitted at lambda cold-start by `validateProdEnv()` when `CONTEXT === 'production'` and a [`REQUIRED_PROD_VARS`](src/server/configValidation.ts) entry is missing/empty; audit 38/001), `health_firestore_probe_failed` (with `error`, `latency_ms` — emitted by the readiness path in [`netlify/functions/health.ts`](netlify/functions/health.ts) when the Firestore probe fails or times out; audit 40/001), and the client-side defensive events `analytics_init_failed`, `analytics_track_failed` (audit 33/001). **Fail-open `console.error` log lines MUST include `error: String(err)`** alongside the `event` field — pin the cause, since the on-call has only the JSON line. Pattern: `} catch (err) { console.error(JSON.stringify({ event: 'foo_failed', error: String(err) })); /* fall through */ }`. Pinned in `gen_anthropic_error`/`rate_limit_check_failed`/`tone_check_failed`/`distress_check_failed` (audit run 13/001 closed two gaps where the catch had been written without binding `err`; run 21/001 extended the convention to `gen_parse_failed` in `validation.ts` and matched the shape in client code — `gen_client_error` in `lib/api.ts`, `download_failed` in `lib/download.ts`, `error_boundary` in `components/ErrorBoundary.tsx`, `poster_render_failed` in `components/PosterCanvas.tsx`). **Server-side log helpers MUST go through [`logEvent`/`logError` in `src/server/log.ts`](src/server/log.ts)** — never `console.log(JSON.stringify(...))` directly. The helpers auto-attach a `request_id` field (matching the response's `X-Request-Id` header) when called inside the `runWithRequestContext` scope set by the handler in [`netlify/functions/generate.ts`](netlify/functions/generate.ts). Without the helper, the per-request correlation breaks the moment a new event is added — pinned by the `attaches request_id to every server log line emitted during a request` block in [`tests/server/generate-integration.test.ts`](tests/server/generate-integration.test.ts) and the request-context propagation tests in [`tests/server/log.test.ts`](tests/server/log.test.ts). Audit run 40/001
+- **Health endpoint** at [`netlify/functions/health.ts`](netlify/functions/health.ts) — `GET /api/health` for readiness (verifies env config + Firestore connectivity, returns 200 ok / 200 degraded / 503 unhealthy with structured `checks[]`), `GET /api/health?mode=live` for liveness (zero-IO ping; use from cheap uptime monitors). The endpoint **NEVER calls Anthropic** (every probe would burn ~$0.001 of Sonnet input — cost / blast-radius guard) and **NEVER returns env-var values** (`message` field surfaces only the names of missing vars, never the values; pinned by the `readiness body never contains env-var values` test in [`tests/server/health.test.ts`](tests/server/health.test.ts)). Firestore probe times out at `FIRESTORE_PROBE_TIMEOUT_MS = 2_000` so a hung Firestore can't hang the probe. **When adding a new production-required env var to [`REQUIRED_PROD_VARS`](src/server/configValidation.ts), also extend `REQUIRED_FOR_READINESS` in `health.ts`** — the readiness check should return 503 only when the lambda CANNOT serve a `/generate` request (e.g. missing `ANTHROPIC_API_KEY` or `FIREBASE_*`). `IP_SALT_BASE` / `ALLOWED_ORIGINS` deliberately don't fail readiness because the lambda still serves traffic without them (degraded behavior — same triage axis the validator applies). Audit run 40/001
+- **Rate limit**: 25/hour per IP, hashed with daily-rotated salt (`IP_SALT_BASE:YYYY-MM-DD`), SHA-256 truncated to 32 chars, stored at `rateLimits/{hashedIp}` with `expiresAt` for TTL. Handler emits `X-RateLimit-Limit/Remaining/Reset` on every response where the limiter ran (intentionally absent on bypass and fail-open paths) plus `Retry-After` on `rate_limited`. `retryAfterSec` is computed from `windowStart + 1hr - now`, NOT a hardcoded value. **Daily salt is UTC-anchored** via `new Date().toISOString().slice(0, 10)` — do NOT swap for `toLocaleDateString()`/`getDate()`/`getMonth()` (would produce different hashes per host TZ across multi-region deployments; pinned by `hashIp — UTC-anchored salt rotation` block in [`tests/server/rateLimit-extended.test.ts`](tests/server/rateLimit-extended.test.ts)). **TTL contract `expiresAt = windowStart + 1 hour`** is pinned by the `TTL contract` tests in the same file — initial-create and window-reset MUST write `expiresAt`, count-increment MUST NOT touch it (otherwise a busy IP slides TTL forward indefinitely and the `rateLimits` collection grows past free-tier). **Operational dependency (NOT enforceable from code):** the Firestore TTL *policy* must be configured in the Firebase console / `gcloud firestore` against the `rateLimits` collection's `expiresAt` field. The code writes the field correctly, but TTL is a project-level Firestore feature, not a write-time guarantee — if the policy is missing in production, docs accumulate forever despite the test suite passing. Verify on every new Firebase environment. One known consequence of the daily-salt design: at UTC 00:00:00 every IP gets a fresh doc, so a user can do ~25 requests at 23:59:59 UTC and another ~25 at 00:00:01 UTC. Documented in [`audit-reports/14_DATETIME_HANDLING_REPORT_001_2026-05-04_0121.md`](audit-reports/14_DATETIME_HANDLING_REPORT_001_2026-05-04_0121.md) and [`audit-reports/24_DATA_INTEGRITY_REPORT_001_2026-05-04_1745.md`](audit-reports/24_DATA_INTEGRITY_REPORT_001_2026-05-04_1745.md)
+- **Retry budget = 2** — on exhaustion, ship a `safe_fallback` from [`fallbacks.ts`](src/server/fallbacks.ts). User NEVER sees raw error
+- **Per-request timeout on every Anthropic SDK call** — pass `{ timeout: ANTHROPIC_REQUEST_TIMEOUT_MS }` (12s, exported from [`src/server/anthropic.ts`](src/server/anthropic.ts)) as the **second arg** to `anthropic.messages.create({...}, { timeout: ... })`. The SDK default is 10 minutes — far longer than the Netlify lambda budget (10s default, 26s max free-tier), so a hung provider call would burn the whole lambda on attempt 1 instead of letting the retry loop find a working response. Threaded into all three call sites: `generateLines`, `checkTone`, `checkDistressWithHaiku`. **Any new `messages.create` call MUST pass this timeout** — pinned by the timeout-arg contract tests in [`tests/server/anthropic.test.ts`](tests/server/anthropic.test.ts) and [`tests/server/safety-extended.test.ts`](tests/server/safety-extended.test.ts)
+- **Anthropic prompt caching MUST be enabled on every `messages.create` call** — pass `system` as a content-block array `[{ type: 'text', text: PROMPT, cache_control: PROMPT_CACHE_CONTROL }]`, **never** as a bare string. `PROMPT_CACHE_CONTROL` is the `{ type: 'ephemeral' }` marker exported from [`src/server/anthropic.ts`](src/server/anthropic.ts) — single source of truth (safety.ts imports it for the distress check). Without it, the static prefix (~1300 tokens of `VOICE_SYSTEM_PROMPT`, ~140 of `TONE_CHECK_PROMPT`, ~250 of `DISTRESS_CHECK_PROMPT`) re-incurs full input cost on every request: ~$0.0048/req Sonnet vs ~$0.0013/req with caching (73% input-cost cut). Threaded into all three call sites — `generateLines`, `checkTone`, `checkDistressWithHaiku` — by audit run 26/001 and pinned by the `attaches cache_control to the system prompt` test in [`tests/server/anthropic.test.ts`](tests/server/anthropic.test.ts). Anthropic's 5-minute ephemeral TTL keeps the cache warm at ≥1 req/5min sustained; below that the cold-call write surcharge (1.25× base) still amortizes positive after the second hit. **If you add a fourth Anthropic call site, mirror the same shape** or you've silently re-introduced the regression that 26/001 closed
+- **Anthropic retry loop bails on 4xx (any 400-499); retries on 5xx and network-level errors** — [`generate.ts`](netlify/functions/generate.ts)'s catch in the `for (let attempt = 0; attempt <= MAX_RETRIES; attempt++)` loop checks `getApiErrorStatus(err)` (duck-typed on `err.status` — exported from [`anthropic.ts`](src/server/anthropic.ts), used instead of `instanceof Anthropic.APIError` because the integration tests mock the SDK module wholesale and the mocked module doesn't preserve the APIError class). On 4xx (auth/bad-request/permission-denied/rate-limit) the loop `break`s immediately to `safe_fallback` — these errors are NEVER transient: 401 means the API key is wrong, 400 means the request shape is wrong, 429 means provider-throttled and the lambda budget (~26s) can't honor a typical 30+ second `Retry-After`. Pre-fix every error type retried 2× regardless = up to 36s wasted on a misconfigured API key before the user saw `safe_fallback`. 5xx and network-level errors (`status === undefined` — covers `APIConnectionError`/`APIConnectionTimeoutError`) DO retry — those are often transient and worth a second attempt within the budget. **`gen_anthropic_error` log now includes `status` and `attempt`** alongside the existing `error` field — distinguishes "auth failure" from "transient 5xx" from "client-side timeout" without re-running curl against the API. **`gen_ok` log now includes `duration_ms`** (cumulative wall time across all attempts including tone check) — together with `retries` this drives "is Anthropic getting slower" charting without an APM. **Same `status` field added to `tone_check_failed` and `distress_check_failed` events** for grep parity. **When adding any new Anthropic call site outside this retry loop**, mirror the `getApiErrorStatus(err)` extraction in the catch block — uniform log shape is what makes the field useful for ops. Pinned by the `Anthropic error type discrimination` block in [`tests/server/generate-integration.test.ts`](tests/server/generate-integration.test.ts) (5 cases: 401-bail / 400-bail / 429-bail / 500-retry / no-status-retry) and the `getApiErrorStatus` shape tests in [`tests/server/anthropic.test.ts`](tests/server/anthropic.test.ts). Audit run 33/001
+- **`excludePhotoIds` is bounded at `MAX_EXCLUDE_PHOTO_IDS = 50` (array length) AND `MAX_EXCLUDE_PHOTO_ID_LENGTH = 64` (per-element string length)** — both exported from [`src/types/index.ts`](src/types/index.ts) so the client and server reference the same constants (mirrors the `MAX_PROMPT_LENGTH` pattern). Photo library is ~10 entries; 50 is generous for any session and bounds attacker-controlled array length below Netlify's 6MB body cap. Per-element bound prevents an attacker from fitting ~50 multi-KB strings under the body cap and forcing expensive Zod work on a multi-MB payload (slug-pattern photo IDs are ≤30 chars in practice; 64 is generous headroom). Pinned by accept-50 / reject-51 array-bound tests + accept-64 / reject-65 / reject-empty-string per-element tests in [`tests/server/generate-contract.test.ts`](tests/server/generate-contract.test.ts). **Client-side mirror**: [`App.tsx`](src/App.tsx) slices the `excludePhotoIds` accumulator with `.slice(-MAX_EXCLUDE_PHOTO_IDS)` after each successful generation — without this, a user who regenerated >50 times would silently 400 because the accumulator outgrew the contract. Audit run 24/001 closed this drift surface; do not drop the slice or hardcode either constant separately on either side
+- **Local dev bypass**: set `RATE_LIMIT_PER_HOUR=9999` (skips entire rate-limit block)
+- **Tone check bypass**: set `ENABLE_TONE_CHECK=false` (returns true unconditionally)
+- **`setTimeout` deadlines inside `Promise.race` MUST be cleared on success in a `finally` block** — `generate.ts:172-198` arms a 3s timer to bound the rate-limit Firestore call, captures the handle, and clears it in `finally`. Why this matters in serverless: AWS Lambda (under Netlify Functions) freezes the event loop between invocations on a warm container, so a timer that hasn't fired by the time the response is returned is **carried into the next invocation** and can fire spurious rejections during an unrelated request. Pre-fix this leaked a pending timer on every successful rate-limit path. Apply the same scoped-handle + `finally`-clear pattern to any future race-with-deadline (Anthropic timeouts already use the SDK's built-in `{ timeout: ... }` arg, which handles this correctly — only hand-rolled `setTimeout`s need this guard). Audit run 25/001
+- **Static safety / lookup data MUST be preallocated at module load, not rebuilt per request** — [`safety.ts`](src/server/safety.ts) precompiles `SLUR_PATTERNS` (regex), `PUBLIC_FIGURE_PATTERNS` (regex), and `DISTRESS_PHRASES_LOWER` (lowercased strings) once when the module evaluates. Pre-fix, `checkSlurFilter` ran `new RegExp(...)` for every entry on every request and `checkDistressPhraseList` re-lowercased the phrase list on every call — pure waste, since the source data is frozen. `vi.mock('@/server/slur-list')` etc. still work because vi hoists mocks above module evaluation, so the precompiled arrays in tests come from the mocked source. **When you add a new static lookup list (slurs, phrases, public figures, etc.), preallocate any derived form (regex, lowercased copy, Set) at module scope** — putting that work on the request hot path is the regression to avoid. Audit run 25/001
+- **`firebase-admin` transitive-vuln baseline (do not chase)**: `firebase-admin@13.8.0` is the latest release and pins older `uuid`/`gaxios`/`google-gax`/`@google-cloud/{firestore,storage}`/`retry-request`/`teeny-request`/`http-proxy-agent`/`@tootallnate/once`. `npm audit` will continuously report ~10 advisories (8 moderate, 2 low) until upstream bumps `uuid` to ≥14. **None are exploitable here** — server only uses `firebase-admin/firestore` `Timestamp` and one `runTransaction` (no Storage SDK, no proxy, no `uuid.v3/v5/v6` with caller buffers). `npm audit fix`'s suggested resolution to `firebase-admin@10.1.0` is a misleading downgrade — ignore it. Treat the cluster as accepted; only escalate on `high`/`critical`. Full analysis in [`audit-reports/11_DEPENDENCY_HEALTH_REPORT_001_2026-05-03_2351.md`](audit-reports/11_DEPENDENCY_HEALTH_REPORT_001_2026-05-03_2351.md)
+- **Response security headers** ([`netlify.toml`](netlify.toml)): `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`, `Strict-Transport-Security: max-age=31536000; includeSubDomains` (no `preload` until ready to submit), `Cross-Origin-Opener-Policy: same-origin`, and a **Report-Only** CSP. The CSP allows `self`, PostHog, Firebase Storage, and `data:`/`blob:` for canvas downloads; `style-src` keeps `'unsafe-inline'` for shadcn/Radix runtime style injection. Promote CSP from `Content-Security-Policy-Report-Only` to enforced after a production observation window. **Do not remove these headers** when restructuring `netlify.toml`
 
 ### The Two-Line Contract (Non-Negotiable)
 
-- **Line 1**: 30–50 chars target, 60 hard cap. Sincere, reverent, wellness-influencer voice
-- **Line 2**: 50–88 chars target, 100 hard cap. Savagely honest pivot at the *situation*, never the user
-- The format is the joke — two visual lines, no wrapping, no exceptions
-- Specificity is what makes line 2 land — must reference user's specific situation
+- **Line 1**: target 30–50 chars, hard cap **60**. Sincere, reverent, wellness-influencer voice
+- **Line 2**: target 50–88 chars, hard cap **100**. Savagely honest pivot at the *situation*, never the user
+- The format IS the joke — exactly two visual lines, no wrapping. Specificity makes line 2 land
+
+Voice rules and validation pipeline: [voice-and-safety.md](.claude/memory/voice-and-safety.md).
 
 ---
 
 ## Conventions
 
-- **Types**: export from `types/index.ts`
-- **Components**: named exports, Shadcn primitives for all interactive elements
-- **Content strings**: all in-voice copy in `src/content/` — never hardcode in components
-- **Safety lists**: server-only — never bundle `distress-phrases.ts` or `slur-list.ts` to client
-- **Timestamps**: `serverTimestamp()` for Firestore writes
+- **Path alias**: `@/*` → `src/*` (configured in `tsconfig.json` + `vite.config.ts`)
+- **Types**: all shared types exported from [`src/types/index.ts`](src/types/index.ts)
+- **Components**: named exports (App.tsx is the lone default export)
+- **Server-only files**: anything in [`src/server/`](src/server/) — never import from client. Server tests live in [`tests/server/`](tests/server/)
+- **Timestamps & dates**: UTC always. Use `Timestamp.now()` from `firebase-admin/firestore` for Firestore writes; `new Date().toISOString()` for any "current date" string. **No third-party date libs** — `moment`/`dayjs`/`date-fns`/`luxon` are NOT in `package.json` and the audit at [`audit-reports/14_DATETIME_HANDLING_REPORT_001_2026-05-04_0121.md`](audit-reports/14_DATETIME_HANDLING_REPORT_001_2026-05-04_0121.md) confirms they aren't needed (one `new Date()` call in the entire codebase). Do NOT use `toLocaleDateString`/`toLocaleString`/`Intl.DateTimeFormat`/`getDate`/`getMonth`/`getHours` etc. — they read host TZ and break the multi-region serverless guarantees. The full test suite (351 tests) passes identically under `TZ=UTC`/`America/Los_Angeles`/`Asia/Kolkata`/`Pacific/Auckland`; keep it that way. No date is rendered to users today — adding the first one requires the steps in the audit report's Conventions § Rule 5 (browser-detected IANA TZ, `Intl.DateTimeFormat` not `.toLocale*`, multi-TZ tests)
+- **Tailwind tokens**: brand color tokens (`bg-cream`, `accent-sage`, etc.) only — never raw Tailwind colors
+
+Brand tokens (colors, typography scale, animation tokens): [design-system.md](.claude/memory/design-system.md).
 
 ---
 
-## Design System Standards
-
-> **Do NOT deviate from these values.**
-
-### Colors — Brand Palette
-
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `bg-cream` | `#F7F3EC` | Page background |
-| `bg-paper` | `#FBF8F2` | Card/input surfaces |
-| `ink-deep` | `#2A2622` | Primary text |
-| `ink-soft` | `#5C5650` | Secondary text |
-| `ink-faint` | `#9A938B` | Placeholder/footer |
-| `accent-sage` | `#8B9D83` | Primary accent (buttons) |
-| `accent-sage-deep` | `#6F8267` | Hover/active |
-| `accent-rust` | `#B47855` | Secondary accent |
-| `border-mist` | `#E5DFD4` | Hairlines |
-| `feedback-quiet` | `#D9D4C8` | Error tone — **never red** |
-
-### Typography
-
-One typeface only: **Cormorant Garamond** (self-hosted via `@fontsource`).
-
-### Buttons — Pill-shaped (`rounded-full`)
-
-- `primary` — Generate, Download (sage bg, cream text)
-- `secondary` — Regenerate, dismiss (paper bg, sage border)
-- `preset` — Mood chips (paper bg, sage border on selected)
-- `ghost` — Footer links (no chrome)
-
----
-
-## Accessibility Standards
+## Accessibility
 
 - Non-interactive elements with `onClick`: add `role="button"`, `tabIndex={0}`, `onKeyDown` for Enter/Space
 - Icon-only buttons: must have `aria-label`
-- Canvas: `aria-label="Poster reading: {line1}. {line2}"`
-- Distress modal: traps focus, `aria-modal="true"`, returns focus to input on close
-
----
-
-## Data Model
-
-```
-rateLimits/{hashedIp}              # TTL auto-delete
-  count: number
-  windowStart: Timestamp
-  expiresAt: Timestamp
-
-photos.json (static, ~75 entries)  # Photo metadata with textZone, capacity, tier
-```
-
-No user data stored. No accounts. No generated content persisted.
-
----
-
-## Core Workflow
-
-1. User lands on single page, sees hero examples
-2. Types situation or clicks mood preset → populates input
-3. Clicks Generate (or Enter)
-4. Backend: safety filters → Claude generates two lines → selects photo
-5. Frontend: Canvas composites poster (800ms anticipation + 600ms reveal fade)
-6. User downloads 1080x1080 PNG or regenerates
+- Canvas: `aria-label="Poster reading: {line1}. {line2}"` (already in [`PosterCanvas.tsx`](src/components/PosterCanvas.tsx))
+- Distress modal: `aria-modal="true"`, traps focus via Radix Dialog primitive
 
 ---
 
 ## Common Recipes
 
-### Adding a Content Preset
-1. Add label to `src/content/presets.ts`
-2. If new theme, add synonym entries to `src/content/synonyms.ts`
+### Adding a Mood Preset
+1. Append label to `presets` in [`src/content/presets.ts`](src/content/presets.ts)
+2. If new theme keyword, add an entry to `synonymMap` in [`src/server/synonyms.ts`](src/server/synonyms.ts) — otherwise specificity check may reject Sonnet output
 
-### Adding a Photo to Library
-1. Use `tools/curation/` to define textZone + compute capacity
-2. Add entry to `src/data/photos.json`
-3. Run `npm run lint:photos` to validate
+### Adding a Photo to the Library
+1. Compute `textZone` (normalized 0–1) and `capacity` for line1/line2
+2. Append entry to [`src/data/photos.json`](src/data/photos.json) — id must match `^[a-z]+(-[a-z]+)*-\d{2,}$`
+3. Upload the 1080×1080 JPG to Firebase Storage at `photos/{id}.jpg` (use [`tools/upload-real-photos.mjs`](tools/upload-real-photos.mjs) as reference)
+4. `npm run build` runs `lint:photos` and fails on a rejected entry; `npm test` also catches it via [`tests/server/photos-library-schema.test.ts`](tests/server/photos-library-schema.test.ts)
+
+### Adding an Error Copy String
+1. Add the key to `errorCopy` in [`src/content/copy.ts`](src/content/copy.ts)
+2. Reference it from the component — never hardcode
+
+### Adding an API Field, Endpoint, or Response Variant
+1. Read [`docs/API_DESIGN_GUIDE.md`](docs/API_DESIGN_GUIDE.md) — codifies URL/field naming, status code policy, error shape, validation, rate-limit headers, and includes recipes
+2. The wrapper pattern is **always-200 with body `status` discriminator** for *business outcomes* (rate_limited, blocked, distress, ok, safe_fallback, error). Don't introduce `429` for `rate_limited` or `403` for `blocked`. The SPA only narrows on `body.status`. Two exceptions are **connection-level rejections** that never reach the business pipeline: `405` for non-POST method, `403` for Origin-allowlist failure (CSRF shield). Both pinned by [`tests/server/generate-contract.test.ts`](tests/server/generate-contract.test.ts)
+3. Update `GenerateResponse` in [`src/types/index.ts`](src/types/index.ts) AND the mirrored Zod schema in `generate-contract.test.ts` together — they're load-bearing
+
+### Rendering a Server-Provided URL or Phone in the UI
+The hotline payload from `/generate` is the only server-controlled URL/phone we render today, and [`src/components/DistressInterstitial.tsx`](src/components/DistressInterstitial.tsx) sanitizes both before they hit the DOM:
+- `safeTelHref(rawPhone)` allows only dial-pad characters (`+`, digits, `()`, `-`); anything else returns `null` and the link is suppressed
+- `safeHotlineHref(rawUrl)` parses with `URL()` and accepts `https:` only — falls back to `https://findahelpline.com` on parse error or non-HTTPS scheme
+
+When adding any new server-provided URL to the UI, mirror this pattern (parse + scheme-allowlist) rather than passing strings into `href` raw — even if the server is the only writer. Defense-in-depth here costs ~10 lines per consumer and is the last line before tabnabbing / `javascript:` injection.
 
 ---
 
-## Documentation Hierarchy
+## Testing Patterns (Non-Obvious)
 
-| File | When to load |
-|------|-------------|
-| `CLAUDE.md` | Always (this file) |
-| `.claude/memory/MEMORY.md` | Always (auto-loaded navigation index) |
-| `.claude/memory/voice-and-safety.md` | Working on generation, prompts, safety filters, or tone |
-| `.claude/memory/canvas-and-compositing.md` | Working on poster rendering, text fitting, or download |
-| `.claude/memory/design-system.md` | Building or modifying UI components |
-| `.claude/memory/api-and-backend.md` | Working on the Netlify function or rate limiting |
-| `.claude/memory/prd-index.md` | Need detailed specs — maps topics to PRD doc numbers |
+- **Default Vitest env is `node`** (set in `vite.config.ts`). For tests that touch DOM/`navigator`/`Image`, add `// @vitest-environment jsdom` as the **first line** of the file. `globals: true` means `describe`/`it`/`expect`/`vi` are auto-imported.
+- **No `@testing-library/react` / `@testing-library/jest-dom`** — the suite is canvas-mock + pure-logic-unit-test based; no React component-render tests exist. Both packages were declared in the original spec ([`docs/superpowers/plans/2026-05-01-bless-your-heart-full-build.md:149`](docs/superpowers/plans/2026-05-01-bless-your-heart-full-build.md)) but never wired in (no `setupFiles` entry, no `render(`/`screen.` calls anywhere) and were removed in NightyTidy step 11 Run 002 (audit-reports/11_DEPENDENCY_HEALTH_REPORT_002). **Don't reach for testing-library on autopilot** — first check whether a unit test against pure logic suffices (the existing test suite shows the pattern). If you genuinely need a component-render test, install testing-library deliberately and add a `setupFiles` entry to `vite.config.ts`. The recurring "declared-but-unused dep" pattern (this is the second instance after `react-hook-form`) is what motivates the recommended `knip`/`depcheck` CI step in the audit report.
+- **Mocking the Anthropic SDK requires `vi.hoisted`** — the client is instantiated at module-load time in [`src/server/anthropic.ts`](src/server/anthropic.ts), so plain top-level `vi.fn()` vars aren't initialized in time. See [`tests/server/generate-integration.test.ts`](tests/server/generate-integration.test.ts) for the pattern.
+- **Override the slur list in safety tests** with `vi.mock('@/server/slur-list', () => ({ slurList: ['testblockedslur'] }))` to avoid leaking the real moderation list into test fixtures or CI logs.
+- **Canvas mocking**: jsdom's `getContext('2d')` is incomplete (`measureText`/`fillText`/etc. are stubs). Build a recording mock context and inject via `vi.spyOn(document, 'createElement').mockReturnValue(...)`. See [`tests/client/compositor.test.ts`](tests/client/compositor.test.ts).
+- **Firestore mocking for rate-limit**: stub both `getDb` and `firebase-admin/firestore`'s `Timestamp` to drive transactions without credentials. See [`tests/server/rateLimit-extended.test.ts`](tests/server/rateLimit-extended.test.ts). **The `Timestamp.now()` mock MUST capture `Date.now()` once at construction** — use `now: () => { const ms = Date.now(); return { toMillis: () => ms }; }`. The volatile shape `now: () => ({ toMillis: () => Date.now() })` re-reads the wall clock on every `.toMillis()` call and produces a 1ms drift across paired reads in the same assertion (e.g. `expiresAt - windowStart === 3599999` when a millisecond ticks between them — caused a 1-in-5 TTL-test flake before audit run 20/002). Same shape required in `generate-integration.test.ts` and `generate-rate-limit-integration.test.ts`.
+- **`process.env` mutations must use `try/finally`** — assertion failures between mutate and restore would leak env state into every later test in the file's worker. Pattern: capture original, mutate inside `try`, restore inside `finally`. See [`tests/server/anthropic.test.ts`](tests/server/anthropic.test.ts) for the canonical shape.
+- **Top-level env writes in `generate-contract.test.ts:53-56`, `generate-integration.test.ts:37-40`, and `generate-rate-limit-integration.test.ts:70-74` are load-bearing** — they MUST sit at module scope above `import { handler }` because the source module reads env at module-eval time. Don't "clean these up" into `beforeAll` (the import would already have evaluated against unset env) and don't flip vitest's `isolate: false` (these writes would leak across files in the same worker). Per-file isolation is what keeps them safe.
+- **Three integration test files cover [`netlify/functions/generate.ts`](netlify/functions/generate.ts), each with a DIFFERENT rate-limit env regime — keep them aligned.** [`generate-integration.test.ts`](tests/server/generate-integration.test.ts) sets `RATE_LIMIT_PER_HOUR='9999'` (BYPASS — exercises the orchestration without the rate-limit branch). [`generate-contract.test.ts`](tests/server/generate-contract.test.ts) also bypasses, then uses one localized `vi.doMock` flip to test the `rate_limited` response shape. [`generate-rate-limit-integration.test.ts`](tests/server/generate-rate-limit-integration.test.ts) sets `RATE_LIMIT_PER_HOUR='25'` (ENABLED — module-mocks `@/server/rateLimit` so the wrapper code in `generate.ts:55-72` is actually exercised: timeout race, fail-open, denied path). When editing the rate-limit branch in `generate.ts`, update the rate-limit-integration file too — a refactor that breaks the `Promise.race` would silently pass the bypass-regime tests.
+- **Don't try to speed up the test suite by disabling isolation or switching pools** — `audit-reports/07_TEST_EFFICIENCY_REPORT_001_*.md` measured `--no-isolate` at +31% slower (2.44s) and `--pool=forks` at +6% slower; threads+isolate is optimal. Wall-clock (~1.9s for 310 tests) is dominated by per-worker module import warmup, which is irreducible. If a future change adds heavy I/O or stretches wall-clock past ~5s, re-audit before assuming the same conclusion holds.
+- **Wire-format contract for the generate endpoint lives in [`tests/server/generate-contract.test.ts`](tests/server/generate-contract.test.ts)** — Zod schema mirrors `GenerateResponse` and pins HTTP status codes, response headers, request boundaries, and every `status` discriminator. Add new response fields here AND in `src/types/index.ts` together. Keep the `generate-integration.test.ts` orchestration tests separate from these contract tests.
+- **Don't test what TypeScript catches** — discriminated union narrowing, return-type shape, nullability. Test runtime values.
+- **Default to `it.each` for 3+ structurally-parallel cases** — when several tests differ only in input/output and share setup, write a single `it.each` table rather than copy-pasting test bodies. The `$key` template syntax in the test name keeps failure messages specific. See [`tests/client/compositor.test.ts`](tests/client/compositor.test.ts) (watermark corners) and [`tests/client/download.test.ts`](tests/client/download.test.ts) (`isIOSSafari` user agents) for the canonical shape.
+- **Mark genuine bugs with `// BUG:` and skip the test** — never silently fix code in a test-writing session. Document in `audit-reports/`.
+- **`tests/server/photos-library-schema.test.ts` mirrors the rules in [`tools/lint-photos.ts`](tools/lint-photos.ts) — when adding a lint rule, mirror it here.** The lint script only runs at `npm run build`; the schema test runs every `npm test`. Keeping them aligned closes the gap where a developer who edits `photos.json` and runs only the test suite would not catch a malformed entry. The schema test also pins the contract that every photoId in `safeFallbacks` resolves to a real photo in the library.
+
+---
+
+## Documentation
+
+Tiered system: CLAUDE.md → [MEMORY.md](.claude/memory/MEMORY.md) → topic files (`.claude/memory/*.md`). Max 2 hops from cold start.
+
+**Placement rule**: Prevents mistakes on ANY task → CLAUDE.md. Spans features → MEMORY.md. One feature → topic file.
+
+**Updating docs**: When code changes affect a rule in CLAUDE.md, update CLAUDE.md. When code changes affect a feature covered by a memory file, update that file. Topic files target 40–150 lines — split into hub + sub-topic files when content clusters into distinct concerns.
+
+For PRD specs (deep reference, never auto-loaded): [prd-index.md](.claude/memory/prd-index.md) maps topics to `PRD/##_*.md` doc numbers.
+
+## NightyTidy — Last Run
+
+Last run: 2026-05-01. To undo, reset to git tag `nightytidy-before-2026-05-01-1532`.

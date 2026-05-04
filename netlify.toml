@@ -17,6 +17,15 @@
   to = "/index.html"
   status = 200
 
+# Hero example images are content-versioned via filename suffix
+# (hero-1-540.webp, hero-1-720.webp). They never change at the same URL, so
+# they are safe to cache for a year — keeps repeat-visit bandwidth at zero
+# and lets the Netlify CDN amortize origin pulls across visitors.
+[[headers]]
+  for = "/examples/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 [[headers]]
   for = "/*"
   [headers.values]
@@ -24,3 +33,17 @@
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    # 1-year HSTS without preload — committed for the max-age window only.
+    # Add ; preload (and submit to hstspreload.org) when the team is ready.
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+    # Isolates this browsing context from cross-origin opener references —
+    # mitigates tabnabbing on outbound links (only DistressInterstitial opens
+    # one, and it already uses rel="noopener noreferrer", but COOP backstops it).
+    Cross-Origin-Opener-Policy = "same-origin"
+    # CSP in Report-Only mode — observes violations without blocking. Promote to
+    # Content-Security-Policy after monitoring a week of production traffic.
+    # Allows: self, PostHog (analytics), Firebase Storage (photos), Google Fonts /
+    # data-URI fonts shipped by @fontsource, blob/data: for canvas downloads.
+    # 'unsafe-inline' on style-src is required by shadcn/Radix runtime style
+    # injection; tighten with a hash/nonce only after evaluating Radix output.
+    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self' https://*.posthog.com https://*.i.posthog.com; img-src 'self' https://firebasestorage.googleapis.com data: blob:; connect-src 'self' https://*.posthog.com https://*.i.posthog.com; font-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"

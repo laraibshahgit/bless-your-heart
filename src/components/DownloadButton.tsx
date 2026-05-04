@@ -1,68 +1,92 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
 import { downloadPoster, isIOSSafari } from '@/lib/download';
-import { downloadConfirmation, errorCopy } from '@/content/copy';
+import { downloadConfirmation, downloadCopy, errorCopy } from '@/content/copy';
 import { track } from '@/lib/analytics';
+
+// Status auto-reset durations. Error stays visible longer than success because
+// users need a beat to register what failed; the success confirmation just has
+// to register that the file is on its way.
+const ERROR_DISPLAY_MS = 3000;
+const SUCCESS_DISPLAY_MS = 2500;
 
 export function DownloadButton() {
   const [status, setStatus] = useState<'idle' | 'downloading' | 'confirmed' | 'error'>('idle');
   const [showIOSHint, setShowIOSHint] = useState(false);
+  // Track the auto-reset timer so we can clear it on unmount and avoid
+  // setStatus on a dropped component (PosterReveal unmounts this whole subtree
+  // when the user regenerates from the 'settled' state).
+  const resetRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => () => clearTimeout(resetRef.current), []);
 
   async function handleDownload() {
     const canvas = document.querySelector('canvas');
     if (!canvas) return;
 
-    setStatus('downloading');
+    const onIOSSafari = isIOSSafari();
 
-    if (isIOSSafari()) {
-      setShowIOSHint(true);
-    }
+    clearTimeout(resetRef.current);
+    setStatus('downloading');
+    if (onIOSSafari) setShowIOSHint(true);
 
     const success = await downloadPoster(canvas);
 
-    if (success) {
-      track('poster_downloaded');
-      if (!isIOSSafari()) {
-        setStatus('confirmed');
-        setTimeout(() => setStatus('idle'), 2500);
-      } else {
-        setStatus('idle');
-      }
-    } else {
+    if (!success) {
       setStatus('error');
-      setTimeout(() => setStatus('idle'), 3000);
+      resetRef.current = setTimeout(() => setStatus('idle'), ERROR_DISPLAY_MS);
+      return;
     }
+
+    track('poster_downloaded');
+
+    if (onIOSSafari) {
+      setStatus('idle');
+      return;
+    }
+
+    setStatus('confirmed');
+    resetRef.current = setTimeout(() => setStatus('idle'), SUCCESS_DISPLAY_MS);
   }
 
+  // Single live region under the button — assistive tech announces the
+  // current status (iOS hint, success confirmation, or error) when it
+  // changes. Using one container with `aria-live="polite"` so the announcer
+  // doesn't fight when status transitions through multiple values during a
+  // single download. `aria-busy` on the button while downloading is a small
+  // additional cue for AT users. Audit run 34/001.
   return (
     <div className="text-center">
       <Button
         variant="primary"
         onClick={handleDownload}
         disabled={status === 'downloading'}
+        aria-busy={status === 'downloading' || undefined}
       >
-        <Download className="w-4 h-4" />
+        <Download className="w-4 h-4" aria-hidden="true" />
         Download
       </Button>
 
-      {showIOSHint && (
-        <p className="mt-2 text-caption text-ink-faint italic">
-          On iPhone? Long-press the image after the new tab opens to save.
-        </p>
-      )}
+      <div aria-live="polite" aria-atomic="true">
+        {showIOSHint && (
+          <p className="mt-2 text-caption text-ink-faint italic">
+            {downloadCopy.iosHint}
+          </p>
+        )}
 
-      {status === 'confirmed' && (
-        <p className="mt-2 text-caption text-ink-soft italic animate-in fade-in duration-200">
-          {downloadConfirmation}
-        </p>
-      )}
+        {status === 'confirmed' && (
+          <p className="mt-2 text-caption text-ink-soft italic animate-in fade-in duration-200">
+            {downloadConfirmation}
+          </p>
+        )}
 
-      {status === 'error' && (
-        <p className="mt-2 text-caption text-feedback-quiet italic">
-          {errorCopy.frontend.downloadFailed}
-        </p>
-      )}
+        {status === 'error' && (
+          <p className="mt-2 text-caption text-feedback-quiet italic">
+            {errorCopy.frontend.downloadFailed}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

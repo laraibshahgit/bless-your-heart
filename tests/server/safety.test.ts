@@ -17,12 +17,11 @@ describe('checkSlurFilter', () => {
 });
 
 describe('checkRealPersonFilter', () => {
+  // 'detects possessive + name pattern' is covered (with all 18 relationship words)
+  // by 'detects all relationship words from the list' in safety-extended.test.ts.
+
   it('returns false for generic input', () => {
     expect(checkRealPersonFilter('my boss is terrible')).toBe(false);
-  });
-
-  it('detects possessive + name pattern', () => {
-    expect(checkRealPersonFilter('my boss Linda is terrible')).toBe(true);
   });
 
   it('allows relationship words without names', () => {
@@ -31,15 +30,11 @@ describe('checkRealPersonFilter', () => {
 });
 
 describe('checkDistressPhraseList', () => {
+  // 'detects crisis phrases' and 'is case-insensitive' are both covered by
+  // 'detects a distress phrase embedded in a longer sentence' and 'handles mixed case'
+  // in safety-extended.test.ts.
+
   it('returns false for casual input', () => {
     expect(checkDistressPhraseList('everything is fine')).toBe(false);
-  });
-
-  it('detects crisis phrases', () => {
-    expect(checkDistressPhraseList('I want to end it all')).toBe(true);
-  });
-
-  it('is case-insensitive', () => {
-    expect(checkDistressPhraseList('I WANT TO END IT ALL')).toBe(true);
   });
 });
