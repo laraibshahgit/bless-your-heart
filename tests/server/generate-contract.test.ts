@@ -357,6 +357,45 @@ describe('contract — request validation', () => {
     ErrorResponseSchema.parse(JSON.parse((result as any).body));
   });
 
+  // Per-element bounds on excludePhotoIds. Without these, an attacker could
+  // fit ~50 large strings under Netlify's 6MB body cap and still force
+  // expensive Zod validation on multi-MB payloads. The bounds also guarantee
+  // the downstream filter (`selectPhoto`) only sees inputs that look like
+  // legitimate photo IDs (slug pattern is ≤30 chars in practice; 64 is
+  // generous headroom). Audited 2026-05-04 in run 24/001.
+  it('accepts excludePhotoIds entries up to 64 chars (per-element upper boundary)', async () => {
+    mockHaikuReply('ok');
+    mockSonnetReply('The morning holds quiet possibility.', 'Coffee is the bravest part of it.');
+    const longButValid = 'a'.repeat(64);
+    const result = await callHandler({
+      prompt: 'morning coffee',
+      excludePhotoIds: [longButValid],
+    });
+    expect((result as any).statusCode).toBe(200);
+  });
+
+  it('rejects excludePhotoIds entries longer than 64 chars (per-element upper boundary)', async () => {
+    const tooLong = 'a'.repeat(65);
+    const result = await callHandler({
+      prompt: 'morning coffee',
+      excludePhotoIds: [tooLong],
+    });
+    expect((result as any).statusCode).toBe(400);
+    ErrorResponseSchema.parse(JSON.parse((result as any).body));
+  });
+
+  it('rejects empty-string excludePhotoIds entries (per-element lower boundary)', async () => {
+    // An empty string is never a valid photo ID. The downstream
+    // `selectPhoto` filter is inert against [''] (no library entry has id="")
+    // but bouncing it at the wire keeps the contract unambiguous and avoids
+    // a class of "is this intentional?" reviewer questions later.
+    const result = await callHandler({
+      prompt: 'morning coffee',
+      excludePhotoIds: [''],
+    });
+    expect((result as any).statusCode).toBe(400);
+  });
+
   it('rejects when prompt is null', async () => {
     const result = await callHandler({ prompt: null, excludePhotoIds: [] });
     expect((result as any).statusCode).toBe(400);

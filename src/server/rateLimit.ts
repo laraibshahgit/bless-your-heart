@@ -14,6 +14,22 @@ const COLLECTION = 'rateLimits';
 // document layout (the resetAt header math derives from this).
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
+// Default cap when RATE_LIMIT_PER_HOUR is unset OR misconfigured. Without a
+// defensive parse, `parseInt('abc', 10)` → NaN would make `data.count >= NaN`
+// always false (silently bypassing the limit), and a negative or zero value
+// would block every request from the very first hit (count=1 >= -5/0).
+// Treat any non-positive integer as a misconfiguration and fall back to 25
+// rather than failing into either pathological state.
+const RATE_LIMIT_DEFAULT = 25;
+
+function parseRateLimit(): number {
+  const raw = process.env.RATE_LIMIT_PER_HOUR;
+  if (raw === undefined) return RATE_LIMIT_DEFAULT;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return RATE_LIMIT_DEFAULT;
+  return parsed;
+}
+
 export function hashIp(rawIp: string): string {
   // UTC-anchored daily salt. `.toISOString()` always returns UTC regardless of
   // the host TZ — do NOT swap to `.toLocaleDateString()` or `getDate()`/`getMonth()`,
@@ -36,7 +52,7 @@ export function getClientIp(headers: Record<string, string | undefined>): string
 }
 
 export async function checkAndIncrementRateLimit(hashedIp: string): Promise<RateLimitResult> {
-  const limit = parseInt(process.env.RATE_LIMIT_PER_HOUR ?? '25', 10);
+  const limit = parseRateLimit();
   const db = getDb();
   const docRef = db.collection(COLLECTION).doc(hashedIp);
 

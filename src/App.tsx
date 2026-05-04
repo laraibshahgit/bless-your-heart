@@ -9,7 +9,7 @@ import { PosterReveal } from '@/components/PosterReveal';
 import { callGenerate } from '@/lib/api';
 import { track } from '@/lib/analytics';
 import { loadingPhrases } from '@/content/copy';
-import type { PosterPhase, Hotline } from '@/types';
+import { MAX_EXCLUDE_PHOTO_IDS, type PosterPhase, type Hotline } from '@/types';
 
 const DistressInterstitial = lazy(() =>
   import('@/components/DistressInterstitial').then((m) => ({ default: m.DistressInterstitial }))
@@ -100,7 +100,12 @@ export default function App() {
 
     if (result.status === 'ok') {
       track('generation_completed', { fittingRung: result.fittingRung });
-      setExcludePhotoIds((prev) => [...prev, result.photoId]);
+      // Cap the accumulator at MAX_EXCLUDE_PHOTO_IDS to mirror the server-side
+      // Zod bound. Without the slice, a user who regenerates >50 times would
+      // start hitting 400 responses (the array would outgrow the contract).
+      // Keep the most-recent N entries — matches the "don't repeat the last
+      // few photos" intent and is robust against eventual library growth.
+      setExcludePhotoIds((prev) => [...prev, result.photoId].slice(-MAX_EXCLUDE_PHOTO_IDS));
       setPosterState({
         phase: 'settled',
         line1: result.line1,

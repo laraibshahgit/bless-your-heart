@@ -39,7 +39,14 @@ export function PromptInput({ value, onChange, disabled }: PromptInputProps) {
 
   useEffect(() => {
     const saved = safeSessionGet(SESSION_KEY);
-    if (saved && !value) onChange(saved);
+    if (saved && !value) {
+      // The browser's `maxLength` attribute on `<input>` only enforces user
+      // typing — a value set programmatically (e.g. tampered sessionStorage)
+      // can exceed it. Truncate defensively so the restored prompt fits the
+      // server's Zod `.max(MAX_PROMPT_LENGTH)` and the user is never silently
+      // blocked by a 400 on submit.
+      onChange(saved.slice(0, MAX_PROMPT_LENGTH));
+    }
   }, []);
 
   function handleChange(newValue: string) {

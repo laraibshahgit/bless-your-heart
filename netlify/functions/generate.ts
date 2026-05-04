@@ -8,7 +8,14 @@ import { selectPhoto } from '../../src/server/photoSelection';
 import { getHotlineForCountry } from '../../src/server/hotlines';
 import { safeFallbacks } from '../../src/server/fallbacks';
 import photos from '../../src/data/photos.json';
-import { MAX_PROMPT_LENGTH, type Photo, type GenerateResponse, type RateLimitResult } from '../../src/types';
+import {
+  MAX_PROMPT_LENGTH,
+  MAX_EXCLUDE_PHOTO_IDS,
+  MAX_EXCLUDE_PHOTO_ID_LENGTH,
+  type Photo,
+  type GenerateResponse,
+  type RateLimitResult,
+} from '../../src/types';
 // User-facing wire-format copy lives in `src/content/copy.ts` — the canonical
 // source of truth for in-voice messaging. The server imports the strings here
 // so a single edit to `errorCopy` updates both the client palette and the API
@@ -24,11 +31,17 @@ import { errorCopy } from '../../src/content/copy';
 // function to JSON-parse + Zod-validate the whole payload before hitting
 // any business logic. Netlify caps the request body at 6MB, so this is a
 // belt-and-suspenders defense, but cheaper to enforce than to argue about.
-const MAX_EXCLUDE_PHOTO_IDS = 50;
-
+// Per-element length is also bounded (MAX_EXCLUDE_PHOTO_ID_LENGTH) — without
+// it, an attacker could fit ~50 large strings under 6MB and push expensive
+// Zod work even though every element is trivially out-of-library on the
+// downstream filter. Both bounds live in `src/types/index.ts` so the client
+// `App.tsx` accumulator stays aligned with the server contract.
 const RequestSchema = z.object({
   prompt: z.string().trim().min(1).max(MAX_PROMPT_LENGTH),
-  excludePhotoIds: z.array(z.string()).max(MAX_EXCLUDE_PHOTO_IDS).default([]),
+  excludePhotoIds: z
+    .array(z.string().min(1).max(MAX_EXCLUDE_PHOTO_ID_LENGTH))
+    .max(MAX_EXCLUDE_PHOTO_IDS)
+    .default([]),
 });
 
 const typedPhotos = photos as Photo[];

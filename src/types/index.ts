@@ -8,6 +8,23 @@
 // ("accepts prompt at exactly 200 chars" / "rejects 201").
 export const MAX_PROMPT_LENGTH = 200;
 
+// Max array length on `GenerateRequest.excludePhotoIds`. Enforced server-side
+// by the Zod request schema (security boundary; bounds attacker-controlled
+// payload size) and mirrored client-side in `App.tsx` so the regenerate
+// accumulator can never grow past what the server will accept. Drift would let
+// a user who regenerates >50 times silently fail with a 400 because the
+// accumulator outgrew the contract — see audit run 24/001.
+export const MAX_EXCLUDE_PHOTO_IDS = 50;
+
+// Max length of a single `excludePhotoIds` element. Photo IDs in the library
+// follow the slug pattern `^[a-z]+(-[a-z]+)*-\d{2,}$` (≤30 chars in practice);
+// 64 is generous headroom that still bounds attacker-controlled string size.
+// Without this bound, an attacker could send 50 strings of 1MB each (50MB total
+// payload) — within Netlify's 6MB body cap they could still get under the cap
+// but cause expensive Zod validation work. Pinned per-element in
+// `tests/server/generate-contract.test.ts`.
+export const MAX_EXCLUDE_PHOTO_ID_LENGTH = 64;
+
 // ── Photo Metadata ──
 
 export interface TextZone {

@@ -447,4 +447,58 @@ describe('checkAndIncrementRateLimit', () => {
     });
     await expect(checkAndIncrementRateLimit('hash-corrupt-2')).rejects.toThrow();
   });
+
+  // Defensive parsing of RATE_LIMIT_PER_HOUR. Without these guards, a misconfig
+  // produces silent pathological behavior:
+  //   - 'abc'    → parseInt = NaN → `count >= NaN` is always false → unlimited
+  //                requests pass through (the rate limiter is effectively off)
+  //   - '-5'     → negative → `count=1 >= -5` is true on first hit → every
+  //                request is blocked from the very first call
+  //   - '0'      → zero → `count=1 >= 0` is true on first hit → same as above
+  //   - ''       → empty string → parseInt = NaN → same as 'abc'
+  // All four cases must fall back to the documented default (25). Audited
+  // 2026-05-04 in run 24/001.
+  describe('checkAndIncrementRateLimit — RATE_LIMIT_PER_HOUR misconfiguration falls back to default 25', () => {
+    let original: string | undefined;
+
+    beforeEach(() => {
+      original = process.env.RATE_LIMIT_PER_HOUR;
+    });
+
+    afterEach(() => {
+      if (original === undefined) delete process.env.RATE_LIMIT_PER_HOUR;
+      else process.env.RATE_LIMIT_PER_HOUR = original;
+    });
+
+    it.each([
+      ['non-numeric string', 'abc'],
+      ['empty string', ''],
+      ['negative integer', '-5'],
+      ['zero', '0'],
+      ['negative float', '-3.14'],
+    ])('falls back to limit=25 when RATE_LIMIT_PER_HOUR is %s', async (_label, raw) => {
+      process.env.RATE_LIMIT_PER_HOUR = raw;
+      buildMockDb({ exists: false });
+      const result = await checkAndIncrementRateLimit('hash-misconfig');
+      expect(result.allowed).toBe(true);
+      expect(result.limit).toBe(25);
+      expect(result.remaining).toBe(24);
+    });
+
+    it('falls back to limit=25 when RATE_LIMIT_PER_HOUR is undefined', async () => {
+      delete process.env.RATE_LIMIT_PER_HOUR;
+      buildMockDb({ exists: false });
+      const result = await checkAndIncrementRateLimit('hash-undef');
+      expect(result.allowed).toBe(true);
+      expect(result.limit).toBe(25);
+    });
+
+    it('uses the parsed value when RATE_LIMIT_PER_HOUR is a positive integer', async () => {
+      process.env.RATE_LIMIT_PER_HOUR = '100';
+      buildMockDb({ exists: false });
+      const result = await checkAndIncrementRateLimit('hash-100');
+      expect(result.limit).toBe(100);
+      expect(result.remaining).toBe(99);
+    });
+  });
 });
