@@ -18,6 +18,20 @@ export function PosterReveal({ state, onRegenerate, onCanvasFailure }: PosterRev
   const containerRef = useRef<HTMLDivElement>(null);
   const [canvasReady, setCanvasReady] = useState(false);
 
+  // Reset canvasReady when leaving `settled`. Without this, regenerating from a
+  // settled poster leaves canvasReady=true across the brief loading phase, and
+  // the moment the new poster's `settled` lands the scroll effect fires *before*
+  // PosterCanvas has finished its async draw pipeline (font load → image fetch →
+  // checkFit → composite, ~100–1000ms). The user gets scrolled to a freshly-
+  // mounted blank canvas, then watches it fill in. The fresh-mount draw still
+  // calls onReady on completion, but by then the scroll has already fired
+  // against stale state. Audit run 36/001.
+  useEffect(() => {
+    if (state.phase !== 'settled') {
+      setCanvasReady(false);
+    }
+  }, [state.phase]);
+
   useEffect(() => {
     if (state.phase === 'settled' && canvasReady) {
       containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
