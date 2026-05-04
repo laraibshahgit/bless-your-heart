@@ -1,6 +1,6 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
 import { z } from 'zod';
-import { getAnthropicClient, generateLines, checkTone } from '../../src/server/anthropic';
+import { getAnthropicClient, generateLines, checkTone, getApiErrorStatus } from '../../src/server/anthropic';
 import { hashIp, getClientIp } from '../../src/server/rateLimit';
 import { checkSlurFilter, checkRealPersonFilter, checkDistressPhraseList, checkDistressWithHaiku } from '../../src/server/safety';
 import { parseGenerationOutput, checkSpecificity } from '../../src/server/validation';
@@ -247,6 +247,12 @@ const handler: Handler = async (event: HandlerEvent) => {
 
   let lastOutput = null;
   let retries = 0;
+  // Track the cumulative wall time spent on the Anthropic retry loop. Surfaced
+  // in the gen_ok / gen_safe_fallback log so ops can distinguish "Anthropic
+  // was slow" from "Anthropic returned the wrong shape" without correlating
+  // multiple log lines. Captured at loop entry so timing covers all attempts.
+  // Audit run 33/001.
+  const generationStart = Date.now();
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -275,10 +281,39 @@ const handler: Handler = async (event: HandlerEvent) => {
       lastOutput = output;
       break;
     } catch (err) {
-      console.error(JSON.stringify({ event: 'gen_anthropic_error', error: String(err) }));
+      const status = getApiErrorStatus(err);
+      console.error(JSON.stringify({
+        event: 'gen_anthropic_error',
+        error: String(err),
+        status,
+        attempt,
+      }));
       retries++;
+      // Bail early on 4xx (any 400-499). These are never transient:
+      //   - 400 BadRequest: malformed request — won't succeed on retry.
+      //   - 401 Authentication: missing/invalid API key — won't succeed.
+      //   - 403 PermissionDenied: account / scope issue — won't succeed.
+      //   - 404 NotFound: invalid model name — won't succeed.
+      //   - 422 UnprocessableEntity: prompt rejected — retrying with the
+      //     same prompt won't help.
+      //   - 429 RateLimit: provider throttled us; the lambda budget (~26s)
+      //     can't honor a Retry-After of 30+ seconds, so retrying inside
+      //     the same invocation just burns budget and slams a stressed
+      //     provider. Better to serve safe_fallback now and let the next
+      //     user's lambda hit a fresh window.
+      // 5xx and network-level errors (status === undefined: connection
+      // timeout, DNS failure, socket drop) remain in the retry loop — those
+      // ARE often transient and worth a second attempt within the lambda
+      // budget. Pre-fix every error type retried 2× = up to 36s wasted on a
+      // misconfigured API key before the user saw safe_fallback.
+      // Audit run 33/001.
+      if (status !== undefined && status >= 400 && status < 500) {
+        break;
+      }
     }
   }
+
+  const generationDurationMs = Date.now() - generationStart;
 
   if (!lastOutput) {
     return respondWithSafeFallback(successRateHeaders);
@@ -300,6 +335,11 @@ const handler: Handler = async (event: HandlerEvent) => {
     event: 'gen_ok',
     fittingRung,
     retries,
+    // Wall time across all attempts (generation + tone check + retries).
+    // Together with `retries` this lets ops chart "how long is each
+    // generation taking" and "is Anthropic getting slower" without
+    // instrumenting an APM. Audit run 33/001.
+    duration_ms: generationDurationMs,
     model: process.env.ANTHROPIC_MODEL_GEN,
   }));
 

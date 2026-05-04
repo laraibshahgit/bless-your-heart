@@ -28,6 +28,21 @@ export const SAFETY_TEMPERATURE = 0;
 // source of truth for the request-level cap.
 export const ANTHROPIC_REQUEST_TIMEOUT_MS = 12_000;
 
+// Duck-type check for an Anthropic SDK APIError-shaped exception. Used to
+// extract the HTTP status from a thrown error so structured logs include the
+// status code (401 vs 429 vs 5xx vs network-level) for incident diagnosis. We
+// don't `instanceof Anthropic.APIError` because the integration tests mock the
+// SDK module wholesale (see tests/server/generate-integration.test.ts) and the
+// mocked module doesn't preserve the APIError class — duck typing is robust
+// against the test harness without coupling to it. APIConnectionError /
+// APIConnectionTimeoutError have no status, so this returns undefined for
+// network-level failures. Audit run 33/001.
+export function getApiErrorStatus(err: unknown): number | undefined {
+  if (typeof err !== 'object' || err === null) return undefined;
+  const status = (err as { status?: unknown }).status;
+  return typeof status === 'number' ? status : undefined;
+}
+
 // Prompt caching marker. Anthropic supports caching large, stable prompt
 // prefixes — subsequent requests that reuse the same prefix pay ~10% of the
 // uncached input rate (Sonnet) or ~10% (Haiku) for the cached portion. The
@@ -173,7 +188,16 @@ export async function checkTone(
 
     return verdict.startsWith('safe');
   } catch (err) {
-    console.error(JSON.stringify({ event: 'tone_check_failed', error: String(err) }));
+    // Surface the HTTP status (when available) alongside the error string so
+    // ops can distinguish "auth failure / misconfigured key" (401) from
+    // "transient provider 5xx" from "client-side timeout" without re-running
+    // a curl against the API. Same shape applied to gen_anthropic_error and
+    // distress_check_failed for grep parity. Audit run 33/001.
+    console.error(JSON.stringify({
+      event: 'tone_check_failed',
+      error: String(err),
+      status: getApiErrorStatus(err),
+    }));
     return true;
   }
 }

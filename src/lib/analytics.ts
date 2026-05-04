@@ -23,18 +23,44 @@ export function initAnalytics() {
   // Audit run 30/001.
   initialized = true;
 
-  posthog.init(import.meta.env.VITE_POSTHOG_KEY, {
-    api_host: import.meta.env.VITE_POSTHOG_HOST,
-    autocapture: false,
-    capture_pageview: true,
-    capture_pageleave: false,
-    persistence: 'sessionStorage',
-    disable_session_recording: true,
-    disable_surveys: true,
-  });
+  // Defensive wrap around the SDK init call. PostHog's init touches
+  // sessionStorage, attaches DOM listeners, and may dispatch synchronous
+  // bootstrap work — Safari Private Mode, Brave on hard mode, and locked-
+  // down corporate browsers can throw on storage access alone. The init is
+  // called from `main.tsx` BEFORE React mounts; an unhandled throw there
+  // would surface as a blank page (the entire app fails to bootstrap because
+  // an analytics SDK couldn't access sessionStorage). Catch and log so the
+  // app continues to render — analytics is a Low-criticality non-critical
+  // dependency and must NEVER block the user flow.
+  // Audit run 33/001 (external integration audit).
+  try {
+    posthog.init(import.meta.env.VITE_POSTHOG_KEY, {
+      api_host: import.meta.env.VITE_POSTHOG_HOST,
+      autocapture: false,
+      capture_pageview: true,
+      capture_pageleave: false,
+      persistence: 'sessionStorage',
+      disable_session_recording: true,
+      disable_surveys: true,
+    });
+  } catch (err) {
+    console.error(JSON.stringify({ event: 'analytics_init_failed', error: String(err) }));
+  }
 }
 
 export function track(event: string, props?: Record<string, unknown>) {
   if (!initialized) return;
-  posthog.capture(event, props);
+  // Defensive wrap. `posthog.capture` is generally robust but the SDK
+  // queues events to sessionStorage and dispatches network requests — both
+  // can throw on locked-down browsers or quota-exhausted storage. Without
+  // this guard, a throw from the SDK would propagate into the calling
+  // component's event handler (e.g. `handleGenerate` in App.tsx), abandoning
+  // the user flow mid-generation because an analytics call failed. Analytics
+  // is non-critical; failures must be logged and swallowed.
+  // Audit run 33/001.
+  try {
+    posthog.capture(event, props);
+  } catch (err) {
+    console.error(JSON.stringify({ event: 'analytics_track_failed', error: String(err) }));
+  }
 }

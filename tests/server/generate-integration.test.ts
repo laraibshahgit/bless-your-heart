@@ -288,6 +288,100 @@ describe('generate endpoint — retry + fallback', () => {
   });
 });
 
+describe('generate endpoint — Anthropic error type discrimination (audit 33/001)', () => {
+  // Helper: produce an APIError-shaped rejection. The integration test mocks
+  // `@anthropic-ai/sdk` wholesale (no APIError class on the mocked module),
+  // so the production code uses duck typing on `err.status` rather than
+  // `instanceof APIError`. This shape mirrors the real SDK's APIError fields
+  // that the generate.ts retry-loop reads.
+  function apiError(status: number, message = 'sdk error'): Error & { status: number } {
+    const err = Object.assign(new Error(message), { status });
+    return err as Error & { status: number };
+  }
+
+  it('bails on 401 (auth) without burning the retry budget', async () => {
+    mockHaikuReply('ok');
+    // Pre-fix: 3 sequential 12s attempts would burn ~36s of lambda budget on a
+    // misconfigured API key before the user saw safe_fallback.
+    // Post-fix: first 401 short-circuits to safe_fallback.
+    anthropicCreate.mockRejectedValueOnce(apiError(401, 'Unauthorized'));
+    // If the bail path is broken these would also be consumed and the test
+    // would still pass — pinning the call count is the load-bearing assertion.
+    anthropicCreate.mockRejectedValueOnce(apiError(401, 'Unauthorized'));
+    anthropicCreate.mockRejectedValueOnce(apiError(401, 'Unauthorized'));
+
+    const result = await callHandler({
+      prompt: 'monday again',
+      excludePhotoIds: [],
+    });
+    const body = JSON.parse((result as any).body);
+    expect(body.status).toBe('safe_fallback');
+    // Haiku call (1) + ONE generation attempt (1) = 2 total. No retries.
+    expect(anthropicCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('bails on 400 (bad request) without burning the retry budget', async () => {
+    mockHaikuReply('ok');
+    anthropicCreate.mockRejectedValueOnce(apiError(400, 'Bad request'));
+    anthropicCreate.mockRejectedValueOnce(apiError(400, 'Bad request'));
+    anthropicCreate.mockRejectedValueOnce(apiError(400, 'Bad request'));
+
+    const result = await callHandler({
+      prompt: 'morning coffee',
+      excludePhotoIds: [],
+    });
+    const body = JSON.parse((result as any).body);
+    expect(body.status).toBe('safe_fallback');
+    expect(anthropicCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('bails on 429 (rate limited) — provider Retry-After exceeds lambda budget', async () => {
+    mockHaikuReply('ok');
+    anthropicCreate.mockRejectedValueOnce(apiError(429, 'rate_limit_error'));
+
+    const result = await callHandler({
+      prompt: 'monday again',
+      excludePhotoIds: [],
+    });
+    const body = JSON.parse((result as any).body);
+    expect(body.status).toBe('safe_fallback');
+    expect(anthropicCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('still retries on 500 (server error) — transient provider failure', async () => {
+    mockHaikuReply('ok');
+    // Two 500s, then success
+    anthropicCreate.mockRejectedValueOnce(apiError(500, 'Internal server error'));
+    anthropicCreate.mockRejectedValueOnce(apiError(500, 'Internal server error'));
+    mockSonnetReply('The morning holds quiet possibility.', 'Coffee is the bravest part.');
+
+    const result = await callHandler({
+      prompt: 'morning coffee',
+      excludePhotoIds: [],
+    });
+    const body = JSON.parse((result as any).body);
+    expect(body.status).toBe('ok');
+    // Haiku (1) + 3 attempts (2 failed + 1 success) = 4
+    expect(anthropicCreate).toHaveBeenCalledTimes(4);
+  });
+
+  it('still retries on network-level error (no status — APIConnectionError-shaped)', async () => {
+    mockHaikuReply('ok');
+    // No `status` on the error → falls through to the retry path.
+    anthropicCreate.mockRejectedValueOnce(new Error('ECONNRESET'));
+    anthropicCreate.mockRejectedValueOnce(new Error('ETIMEDOUT'));
+    mockSonnetReply('Mornings keep arriving.', 'Coffee remains the only ritual.');
+
+    const result = await callHandler({
+      prompt: 'morning coffee',
+      excludePhotoIds: [],
+    });
+    const body = JSON.parse((result as any).body);
+    expect(body.status).toBe('ok');
+    expect(anthropicCreate).toHaveBeenCalledTimes(4);
+  });
+});
+
 describe('generate endpoint — Haiku failure resilience', () => {
   it('proceeds with generation when distress Haiku throws (fails open)', async () => {
     // Phrase miss -> Haiku throws (treated as ok) -> Sonnet succeeds

@@ -108,4 +108,60 @@ describe('track', () => {
     track('plain_event');
     expect(captureMock).toHaveBeenCalledWith('plain_event', undefined);
   });
+
+  // External integration audit run 33/001 — analytics is a Low-criticality
+  // non-critical dependency. PostHog SDK errors must NEVER propagate into
+  // the calling component (App.tsx handleGenerate, PromptInput, etc.) and
+  // abandon the user flow. A throw from `posthog.capture` (e.g. quota-
+  // exhausted sessionStorage on a long-lived tab, security-policy storage
+  // block on Brave/Safari Private Mode) is logged and swallowed.
+  it('swallows posthog.capture errors and logs structured failure event', async () => {
+    vi.stubEnv('PROD', true as any);
+    vi.stubEnv('VITE_POSTHOG_KEY', 'phc_real_key');
+    captureMock.mockImplementation(() => {
+      throw new Error('storage quota exceeded');
+    });
+    const { initAnalytics, track } = await import('@/lib/analytics');
+    initAnalytics();
+
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      // Must not throw — analytics failure is non-blocking.
+      expect(() => track('prompt_submitted', { foo: 'bar' })).not.toThrow();
+      expect(errSpy).toHaveBeenCalled();
+      const logged = String(errSpy.mock.calls[0]?.[0]);
+      expect(logged).toContain('analytics_track_failed');
+      expect(logged).toContain('storage quota exceeded');
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+});
+
+// External integration audit run 33/001 — same swallow-and-log contract for
+// posthog.init. Init runs from main.tsx BEFORE React mounts; an unhandled
+// throw there would surface as a blank page (entire app fails to bootstrap
+// because PostHog couldn't access sessionStorage). Locked-down browsers
+// (Safari Private Mode, Brave hard mode, corporate kiosks) are a real
+// production environment for this app.
+describe('initAnalytics — error resilience', () => {
+  it('swallows posthog.init errors and logs structured failure event', async () => {
+    vi.stubEnv('PROD', true as any);
+    vi.stubEnv('VITE_POSTHOG_KEY', 'phc_real_key');
+    initMock.mockImplementation(() => {
+      throw new Error('sessionStorage blocked');
+    });
+    const { initAnalytics } = await import('@/lib/analytics');
+
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(() => initAnalytics()).not.toThrow();
+      expect(errSpy).toHaveBeenCalled();
+      const logged = String(errSpy.mock.calls[0]?.[0]);
+      expect(logged).toContain('analytics_init_failed');
+      expect(logged).toContain('sessionStorage blocked');
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
 });

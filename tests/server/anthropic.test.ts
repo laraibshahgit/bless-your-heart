@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { generateLines, checkTone, getAnthropicClient, VOICE_SYSTEM_PROMPT, ANTHROPIC_REQUEST_TIMEOUT_MS } from '@/server/anthropic';
+import { generateLines, checkTone, getAnthropicClient, VOICE_SYSTEM_PROMPT, ANTHROPIC_REQUEST_TIMEOUT_MS, getApiErrorStatus } from '@/server/anthropic';
 
 type MockResponse = {
   content: Array<{ type: string; text?: string }>;
@@ -35,6 +35,36 @@ describe('getAnthropicClient', () => {
     const a = getAnthropicClient();
     const b = getAnthropicClient();
     expect(a).toBe(b);
+  });
+});
+
+// External integration audit run 33/001 — getApiErrorStatus duck-types the
+// Anthropic SDK's APIError shape without `instanceof` so test mocks that
+// replace the SDK module wholesale (see tests/server/generate-integration.test.ts)
+// still get correct status extraction. Pinned by both the bail-on-4xx behavior
+// in generate.ts and the structured logs in checkTone / checkDistressWithHaiku.
+describe('getApiErrorStatus', () => {
+  it('returns the numeric status when err.status is a number', () => {
+    expect(getApiErrorStatus({ status: 401 })).toBe(401);
+    expect(getApiErrorStatus({ status: 429 })).toBe(429);
+    expect(getApiErrorStatus({ status: 500 })).toBe(500);
+    expect(getApiErrorStatus(Object.assign(new Error('boom'), { status: 503 }))).toBe(503);
+  });
+
+  it('returns undefined for plain Error (no status — APIConnectionError-shaped)', () => {
+    expect(getApiErrorStatus(new Error('ECONNRESET'))).toBeUndefined();
+  });
+
+  it('returns undefined for non-numeric status (defensive)', () => {
+    expect(getApiErrorStatus({ status: '401' })).toBeUndefined();
+    expect(getApiErrorStatus({ status: null })).toBeUndefined();
+  });
+
+  it('returns undefined for non-object inputs', () => {
+    expect(getApiErrorStatus(null)).toBeUndefined();
+    expect(getApiErrorStatus(undefined)).toBeUndefined();
+    expect(getApiErrorStatus('string error')).toBeUndefined();
+    expect(getApiErrorStatus(42)).toBeUndefined();
   });
 });
 

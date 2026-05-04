@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { distressPhrases } from './distress-phrases';
 import { slurList } from './slur-list';
-import { SAFETY_MAX_TOKENS, SAFETY_TEMPERATURE, ANTHROPIC_REQUEST_TIMEOUT_MS, PROMPT_CACHE_CONTROL } from './anthropic';
+import { SAFETY_MAX_TOKENS, SAFETY_TEMPERATURE, ANTHROPIC_REQUEST_TIMEOUT_MS, PROMPT_CACHE_CONTROL, getApiErrorStatus } from './anthropic';
 
 // Precompile slur regexes once at module load. Without this, every request
 // rebuilt the regex array on the hot path — O(n) RegExp constructor calls per
@@ -91,7 +91,15 @@ export async function checkDistressWithHaiku(
 
     return verdict.startsWith('crisis');
   } catch (err) {
-    console.error(JSON.stringify({ event: 'distress_check_failed', error: String(err) }));
+    // Same status-code-in-log shape as tone_check_failed and
+    // gen_anthropic_error (audit run 33/001) — distinguish 401/429/5xx in
+    // ops dashboards without losing the fail-open behavior that keeps the
+    // distress classifier from blocking generation on infra failure.
+    console.error(JSON.stringify({
+      event: 'distress_check_failed',
+      error: String(err),
+      status: getApiErrorStatus(err),
+    }));
     return false;
   }
 }
