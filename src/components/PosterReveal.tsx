@@ -43,7 +43,15 @@ export function PosterReveal({ state, onRegenerate, onCanvasFailure }: PosterRev
   return (
     <div ref={containerRef} className="w-full max-w-xl mx-auto mt-breathe space-y-4">
       {state.phase === 'loading' && (
-        <div className="text-center py-12">
+        // Reserve the eventual poster's footprint during the anticipation
+        // beat so the layout doesn't jump 360–540 px when `settled` lands
+        // and PosterCanvas mounts. Width tracks PosterCanvas's
+        // `computeSize()` breakpoints exactly: <640 → min(viewport-32,
+        // 360), 640–1023 → 480, ≥1024 → 540. `aspect-square` makes the
+        // height follow the width. The loading phrase centers inside the
+        // reserved square so the user's eye anchors where the poster
+        // will land. Audit run 37/001.
+        <div className="mx-auto aspect-square w-[min(calc(100vw-2rem),360px)] sm:w-[480px] lg:w-[540px] flex items-center justify-center text-center">
           {/*
             role="status" + aria-live="polite" makes screen readers announce
             the rotating loading phrase when it appears, without interrupting
@@ -54,7 +62,7 @@ export function PosterReveal({ state, onRegenerate, onCanvasFailure }: PosterRev
           <p
             role="status"
             aria-live="polite"
-            className="font-serif italic text-body-lg text-ink-soft animate-pulse-opacity"
+            className="font-serif italic text-body-lg text-ink-soft animate-pulse-opacity px-4"
           >
             {state.phrase}
           </p>

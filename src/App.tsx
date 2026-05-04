@@ -7,6 +7,7 @@ import { PresetButtons } from '@/components/PresetButtons';
 import { GenerateButton } from '@/components/GenerateButton';
 import { PosterReveal } from '@/components/PosterReveal';
 import { callGenerate } from '@/lib/api';
+import { prefetchPhoto } from '@/lib/photos';
 import { track } from '@/lib/analytics';
 import { errorCopy, loadingPhrases } from '@/content/copy';
 import { MAX_EXCLUDE_PHOTO_IDS, type PosterPhase, type Hotline } from '@/types';
@@ -133,6 +134,20 @@ export default function App() {
         track('generation_rate_limited');
         setInlineError(result.message);
         return;
+      }
+
+      // Fire-and-forget photo prefetch BEFORE the LOAD_FLOOR_MS hold so the
+      // photo fetch runs in parallel with the anticipation beat. By the time
+      // PosterCanvas mounts (after the hold) and calls loadImage() with the
+      // same crossOrigin='anonymous' URL, the browser HTTP cache hits and
+      // decode resolves in ~30 ms instead of waiting on a fresh network
+      // round trip. Saves roughly 200–2000 ms of perceived blank-canvas
+      // time depending on photo size and network. Both `ok` and
+      // `safe_fallback` carry a photoId; `distress`/`blocked`/`rate_limited`
+      // never reach this branch (they early-returned above). Audit run
+      // 37/001.
+      if (result.status === 'ok' || result.status === 'safe_fallback') {
+        prefetchPhoto(result.photoId);
       }
 
       const elapsed = performance.now() - startedAt;

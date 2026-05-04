@@ -24,8 +24,15 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { initAnalytics } from '@/lib/analytics';
 import { ensureFontsReady } from '@/lib/fonts';
 
-initAnalytics();
-ensureFontsReady();
+// Both calls are fire-and-forget. `initAnalytics` returns a Promise post
+// audit-37/001 (deferred PostHog SDK load via requestIdleCallback so it
+// doesn't block first paint), and `ensureFontsReady` returns the cached
+// document.fonts.load promise. Neither is awaited here because nothing
+// downstream of this point depends on either resolving — React mounts
+// immediately and the per-component consumers of fonts (PosterCanvas) and
+// analytics (App.tsx, etc.) check readiness themselves.
+void initAnalytics();
+void ensureFontsReady();
 
 // Defensive: if `<div id="root">` is ever missing from index.html (template
 // regression), throw a descriptive error instead of letting the `!`-suppressed
