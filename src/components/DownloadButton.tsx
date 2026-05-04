@@ -5,6 +5,12 @@ import { downloadPoster, isIOSSafari } from '@/lib/download';
 import { downloadConfirmation, errorCopy } from '@/content/copy';
 import { track } from '@/lib/analytics';
 
+// Status auto-reset durations. Error stays visible longer than success because
+// users need a beat to register what failed; the success confirmation just has
+// to register that the file is on its way.
+const ERROR_DISPLAY_MS = 3000;
+const SUCCESS_DISPLAY_MS = 2500;
+
 export function DownloadButton() {
   const [status, setStatus] = useState<'idle' | 'downloading' | 'confirmed' | 'error'>('idle');
   const [showIOSHint, setShowIOSHint] = useState(false);
@@ -22,7 +28,7 @@ export function DownloadButton() {
 
     if (!success) {
       setStatus('error');
-      setTimeout(() => setStatus('idle'), 3000);
+      setTimeout(() => setStatus('idle'), ERROR_DISPLAY_MS);
       return;
     }
 
@@ -34,7 +40,7 @@ export function DownloadButton() {
     }
 
     setStatus('confirmed');
-    setTimeout(() => setStatus('idle'), 2500);
+    setTimeout(() => setStatus('idle'), SUCCESS_DISPLAY_MS);
   }
 
   return (

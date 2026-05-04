@@ -1,5 +1,23 @@
 import Anthropic from '@anthropic-ai/sdk';
 
+// Generation request budget. 200 tokens comfortably covers two lines under the
+// 60/100 char caps with JSON wrapper overhead — line1 + line2 + braces is ~50
+// tokens worst case, leaving headroom for retries to vary phrasing without
+// truncation. Temperature 0.9 keeps generations creative across regenerates;
+// the joke depends on phrase variety from one regenerate to the next.
+const GENERATION_MAX_TOKENS = 200;
+const GENERATION_TEMPERATURE = 0.9;
+
+// Safety classifier budget. Both tone-check and distress-check return EXACTLY
+// one word ("safe"|"user", "crisis"|"ok") — 10 tokens leaves slack for any
+// model that prefixes whitespace or quotes without truncating the verdict.
+// Temperature 0 makes the classifier deterministic for the same input, which
+// is correct for a binary classifier (we don't want regenerates flipping the
+// verdict on identical text). Exported because safety.ts uses the same budget
+// for the distress classifier.
+export const SAFETY_MAX_TOKENS = 10;
+export const SAFETY_TEMPERATURE = 0;
+
 let client: Anthropic | null = null;
 
 export function getAnthropicClient(): Anthropic {
@@ -62,8 +80,8 @@ export async function generateLines(
 ): Promise<string> {
   const response = await anthropic.messages.create({
     model: process.env.ANTHROPIC_MODEL_GEN ?? 'claude-sonnet-4-6',
-    max_tokens: 200,
-    temperature: 0.9,
+    max_tokens: GENERATION_MAX_TOKENS,
+    temperature: GENERATION_TEMPERATURE,
     system: VOICE_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -102,8 +120,8 @@ export async function checkTone(
   try {
     const response = await anthropic.messages.create({
       model: process.env.ANTHROPIC_MODEL_SAFETY ?? 'claude-haiku-4-5',
-      max_tokens: 10,
-      temperature: 0,
+      max_tokens: SAFETY_MAX_TOKENS,
+      temperature: SAFETY_TEMPERATURE,
       system: TONE_CHECK_PROMPT,
       messages: [{
         role: 'user',

@@ -5,6 +5,15 @@ import type { RateLimitResult } from '@/types';
 
 const COLLECTION = 'rateLimits';
 
+// Rate-limit window — fixed 1-hour bucket per IP. Pinned by the TTL contract
+// in tests/server/rateLimit-extended.test.ts: `expiresAt = windowStart + 1 hour`
+// must be written on initial-create AND window-reset; the count-increment path
+// must NOT touch expiresAt (otherwise a busy IP would slide TTL forward
+// indefinitely and the rateLimits collection would grow past the free tier).
+// Hardcoded rather than env-driven because changing this changes Firestore
+// document layout (the resetAt header math derives from this).
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+
 export function hashIp(rawIp: string): string {
   // UTC-anchored daily salt. `.toISOString()` always returns UTC regardless of
   // the host TZ — do NOT swap to `.toLocaleDateString()` or `getDate()`/`getMonth()`,
@@ -34,41 +43,40 @@ export async function checkAndIncrementRateLimit(hashedIp: string): Promise<Rate
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(docRef);
     const now = Timestamp.now();
-    const oneHourMs = 60 * 60 * 1000;
     const nowMs = now.toMillis();
 
     if (!snap.exists) {
       tx.set(docRef, {
         count: 1,
         windowStart: now,
-        expiresAt: Timestamp.fromMillis(nowMs + oneHourMs),
+        expiresAt: Timestamp.fromMillis(nowMs + RATE_LIMIT_WINDOW_MS),
       });
       return {
         allowed: true,
         remaining: limit - 1,
         limit,
-        resetAt: Math.floor((nowMs + oneHourMs) / 1000),
+        resetAt: Math.floor((nowMs + RATE_LIMIT_WINDOW_MS) / 1000),
       };
     }
 
     const data = snap.data()!;
     const windowAge = nowMs - data.windowStart.toMillis();
 
-    if (windowAge > oneHourMs) {
+    if (windowAge > RATE_LIMIT_WINDOW_MS) {
       tx.update(docRef, {
         count: 1,
         windowStart: now,
-        expiresAt: Timestamp.fromMillis(nowMs + oneHourMs),
+        expiresAt: Timestamp.fromMillis(nowMs + RATE_LIMIT_WINDOW_MS),
       });
       return {
         allowed: true,
         remaining: limit - 1,
         limit,
-        resetAt: Math.floor((nowMs + oneHourMs) / 1000),
+        resetAt: Math.floor((nowMs + RATE_LIMIT_WINDOW_MS) / 1000),
       };
     }
 
-    const windowEndMs = data.windowStart.toMillis() + oneHourMs;
+    const windowEndMs = data.windowStart.toMillis() + RATE_LIMIT_WINDOW_MS;
     const resetAt = Math.floor(windowEndMs / 1000);
 
     if (data.count >= limit) {
