@@ -89,7 +89,7 @@ on the next request — typically <1s).
 | `ALLOWED_ORIGINS` | Comma-separated allowlist for the CSRF shield. Empty = pass-through. | Netlify env update | Next cold-start | Yes (CLAUDE.md) | Adding/removing a domain doesn't require a code change. |
 | `ANTHROPIC_MODEL_GEN` / `ANTHROPIC_MODEL_SAFETY` | Swap to a different Claude model without code changes. | Netlify env update | Next cold-start | Yes (CLAUDE.md) | Useful for emergency rollback if a new model regresses. |
 | `IP_SALT_BASE` rotation | Invalidates all in-flight rate-limit windows (every IP gets a fresh hash). | Netlify env update | Next cold-start | Yes (PRD/19) | Use only if a salt leak is suspected — every active user gets a fresh window. |
-| Firestore TTL policy | Drives auto-cleanup of `rateLimits` documents past `expiresAt`. | Firebase console / `gcloud firestore` | Variable (within a few hours) | Operational dependency | NOT enforced by code — the `expiresAt` field is written, but the policy itself is project-config. Verify on every new Firebase environment. |
+| Firestore TTL policy | Drives auto-cleanup of `rateLimits` documents past `expiresAt`. | Firebase console / `gcloud firestore` | Variable (within a few hours) | Operational dependency | NOT enforced by code — the `expiresAt` field is written, but the policy itself is project-config. Verify on every new Firebase environment. **This is the only unattended automation in the entire system** (audit 39/001) — there are no cron jobs, scheduled functions, queue workers, or background processes. If the policy is missing, the collection grows forever and the only signal is Firestore billing. |
 
 ### Missing kill switches
 
@@ -123,4 +123,5 @@ manually for diagnostics.
 - **Daily-salt rotation rationale + UTC anchoring**: [`audit-reports/14_DATETIME_HANDLING_REPORT_001_*.md`](../audit-reports/)
 - **Cost-control levers**: [`audit-reports/26_COST_OPTIMIZATION_REPORT_001_*.md`](../audit-reports/)
 - **Why CSRF shield is needed**: [`netlify/functions/generate.ts`](../netlify/functions/generate.ts) (`isOriginAllowed` doc-block)
+- **Scheduled-job & background-process inventory** (full health assessment of every background-ish surface in the codebase): [`audit-reports/39_SCHEDULED_JOBS_REPORT_001_*.md`](../audit-reports/)
 - **Why we cap retries at 2**: [`audit-reports/33_EXTERNAL_INTEGRATION_REPORT_001_*.md`](../audit-reports/)
