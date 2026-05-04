@@ -25,6 +25,7 @@ import {
 // `tests/server/generate-contract.test.ts`.
 import { errorCopy } from '../../src/content/copy';
 import { validateProdEnv } from '../../src/server/configValidation';
+import { resolveRequestId, runWithRequestContext, logEvent, logError } from '../../src/server/log';
 
 // Production environment validation. Runs once at lambda cold-start. When
 // CONTEXT === 'production' AND a required env var is missing/empty, emits a
@@ -77,6 +78,17 @@ function jsonResponse(
   };
 }
 
+// X-Request-Id is returned on every successful response so the consumer can
+// quote it back to support / on-call when reporting an issue. The same ID is
+// the `request_id` field on every server log line (see `src/server/log.ts`),
+// so a customer-supplied ID is searchable end-to-end.
+function withRequestId(
+  headers: Record<string, string>,
+  requestId: string
+): Record<string, string> {
+  return { ...headers, 'X-Request-Id': requestId };
+}
+
 function rateLimitHeaders(rate: RateLimitResult | null): Record<string, string> {
   if (!rate) return {};
   const out: Record<string, string> = {};
@@ -87,7 +99,7 @@ function rateLimitHeaders(rate: RateLimitResult | null): Record<string, string> 
 }
 
 function respondWithSafeFallback(rateHeaders: Record<string, string>) {
-  console.log(JSON.stringify({ event: 'gen_safe_fallback' }));
+  logEvent('gen_safe_fallback');
   const fallback = safeFallbacks[Math.floor(Math.random() * safeFallbacks.length)];
   return jsonResponse(
     {
@@ -141,229 +153,245 @@ function describeZodIssue(error: z.ZodError): string {
 }
 
 const handler: Handler = async (event: HandlerEvent) => {
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers: { ...baseHeaders, Allow: 'POST' },
-      body: JSON.stringify({
-        status: 'error',
-        message: 'Method not allowed. Use POST.',
-        retryable: false,
-      } satisfies GenerateResponse),
-    };
-  }
+  // Resolve the request ID before anything else. Netlify provides
+  // `x-nf-request-id` on every invocation; honoring it lets ops correlate
+  // application logs with Netlify's own function-invocation logs (cold-
+  // start timing, edge cache hits/misses) end-to-end. If the header is
+  // missing (server-to-server clients, local netlify dev), generate one.
+  // The ID is echoed back as `X-Request-Id` on every response so the
+  // browser can quote it back to support, and is automatically attached
+  // to every `logEvent` / `logError` call inside `runWithRequestContext`.
+  // Audit run 40/001.
+  const requestId = resolveRequestId(event.headers);
 
-  if (!isOriginAllowed(event.headers.origin ?? event.headers.Origin)) {
-    console.log(JSON.stringify({ event: 'gen_block', reason: 'origin' }));
-    return jsonResponse(
-      { status: 'error', message: 'Forbidden.', retryable: false },
-      403
-    );
-  }
-
-  let parsed;
-  try {
-    parsed = RequestSchema.parse(JSON.parse(event.body ?? '{}'));
-  } catch (err) {
-    const message =
-      err instanceof z.ZodError ? describeZodIssue(err) : 'Invalid request.';
-    return jsonResponse({ status: 'error', message, retryable: false }, 400);
-  }
-
-  const prompt = normalizePrompt(parsed.prompt);
-  const { excludePhotoIds } = parsed;
-
-  const rawIp = getClientIp(event.headers);
-  const hashedIp = hashIp(rawIp);
-
-  let rateResult: RateLimitResult | null = null;
-  if (process.env.RATE_LIMIT_PER_HOUR !== '9999') {
-    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const { checkAndIncrementRateLimit } = await import('../../src/server/rateLimit');
-      // Lambda runtime caveat: a setTimeout that never fires keeps the event
-      // loop alive between invocations on a warm container. The previous shape
-      // armed a 3s timer and never cleared it on the success path, leaving a
-      // pending callback in the queue after the response was returned. Capture
-      // the handle so the finally block can drop it the moment the rate-limit
-      // call wins the race; clean exit, no zombie timers.
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(() => reject(new Error('rate limit timeout')), RATE_LIMIT_TIMEOUT_MS);
-      });
-      rateResult = await Promise.race([
-        checkAndIncrementRateLimit(hashedIp),
-        timeoutPromise,
-      ]);
-      if (!rateResult.allowed) {
-        console.log(JSON.stringify({ event: 'gen_rate_limited', hashedIp }));
-        const denyHeaders = rateLimitHeaders(rateResult);
-        if (rateResult.retryAfterSec !== undefined) {
-          denyHeaders['Retry-After'] = String(rateResult.retryAfterSec);
-        }
-        return jsonResponse(
-          {
-            status: 'rate_limited',
-            message: errorCopy.rateLimit,
-            retryAfterSec: rateResult.retryAfterSec,
-            resetAt: rateResult.resetAt,
-          },
-          200,
-          denyHeaders
-        );
-      }
-    } catch (err) {
-      console.error(JSON.stringify({ event: 'rate_limit_check_failed', error: String(err) }));
-      rateResult = null;
-    } finally {
-      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+  return runWithRequestContext({ requestId }, async () => {
+    if (event.httpMethod !== 'POST') {
+      return {
+        statusCode: 405,
+        headers: { ...baseHeaders, Allow: 'POST', 'X-Request-Id': requestId },
+        body: JSON.stringify({
+          status: 'error',
+          message: 'Method not allowed. Use POST.',
+          retryable: false,
+        } satisfies GenerateResponse),
+      };
     }
-  }
-  const successRateHeaders = rateLimitHeaders(rateResult);
 
-  if (checkSlurFilter(prompt)) {
-    console.log(JSON.stringify({ event: 'gen_block', reason: 'slur' }));
-    return jsonResponse(
-      { status: 'blocked', message: errorCopy.slurBlock },
-      200,
-      successRateHeaders
+    if (!isOriginAllowed(event.headers.origin ?? event.headers.Origin)) {
+      logEvent('gen_block', { reason: 'origin' });
+      return jsonResponse(
+        { status: 'error', message: 'Forbidden.', retryable: false },
+        403,
+        withRequestId({}, requestId)
+      );
+    }
+
+    let parsed;
+    try {
+      parsed = RequestSchema.parse(JSON.parse(event.body ?? '{}'));
+    } catch (err) {
+      const message =
+        err instanceof z.ZodError ? describeZodIssue(err) : 'Invalid request.';
+      return jsonResponse(
+        { status: 'error', message, retryable: false },
+        400,
+        withRequestId({}, requestId)
+      );
+    }
+
+    const prompt = normalizePrompt(parsed.prompt);
+    const { excludePhotoIds } = parsed;
+
+    const rawIp = getClientIp(event.headers);
+    const hashedIp = hashIp(rawIp);
+
+    let rateResult: RateLimitResult | null = null;
+    if (process.env.RATE_LIMIT_PER_HOUR !== '9999') {
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const { checkAndIncrementRateLimit } = await import('../../src/server/rateLimit');
+        // Lambda runtime caveat: a setTimeout that never fires keeps the event
+        // loop alive between invocations on a warm container. The previous shape
+        // armed a 3s timer and never cleared it on the success path, leaving a
+        // pending callback in the queue after the response was returned. Capture
+        // the handle so the finally block can drop it the moment the rate-limit
+        // call wins the race; clean exit, no zombie timers.
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(() => reject(new Error('rate limit timeout')), RATE_LIMIT_TIMEOUT_MS);
+        });
+        rateResult = await Promise.race([
+          checkAndIncrementRateLimit(hashedIp),
+          timeoutPromise,
+        ]);
+        if (!rateResult.allowed) {
+          logEvent('gen_rate_limited', { hashedIp });
+          const denyHeaders = withRequestId(rateLimitHeaders(rateResult), requestId);
+          if (rateResult.retryAfterSec !== undefined) {
+            denyHeaders['Retry-After'] = String(rateResult.retryAfterSec);
+          }
+          return jsonResponse(
+            {
+              status: 'rate_limited',
+              message: errorCopy.rateLimit,
+              retryAfterSec: rateResult.retryAfterSec,
+              resetAt: rateResult.resetAt,
+            },
+            200,
+            denyHeaders
+          );
+        }
+      } catch (err) {
+        logError('rate_limit_check_failed', { error: String(err) });
+        rateResult = null;
+      } finally {
+        if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+      }
+    }
+    const successRateHeaders = withRequestId(rateLimitHeaders(rateResult), requestId);
+
+    if (checkSlurFilter(prompt)) {
+      logEvent('gen_block', { reason: 'slur' });
+      return jsonResponse(
+        { status: 'blocked', message: errorCopy.slurBlock },
+        200,
+        successRateHeaders
+      );
+    }
+
+    if (checkRealPersonFilter(prompt)) {
+      logEvent('gen_block', { reason: 'real-person' });
+      return jsonResponse(
+        { status: 'blocked', message: errorCopy.realPersonBlock },
+        200,
+        successRateHeaders
+      );
+    }
+
+    // Short-circuit: phrase list is free; only call Haiku if the phrase list misses.
+    const isDistress =
+      checkDistressPhraseList(prompt) || (await checkDistressWithHaiku(anthropic, prompt));
+
+    if (isDistress) {
+      logEvent('gen_distress');
+      const country = (event.headers['x-country'] ?? '').toUpperCase();
+      return jsonResponse(
+        {
+          status: 'distress',
+          hotline: getHotlineForCountry(country),
+        },
+        200,
+        successRateHeaders
+      );
+    }
+
+    let lastOutput = null;
+    let retries = 0;
+    // Track the cumulative wall time spent on the Anthropic retry loop. Surfaced
+    // in the gen_ok / gen_safe_fallback log so ops can distinguish "Anthropic
+    // was slow" from "Anthropic returned the wrong shape" without correlating
+    // multiple log lines. Captured at loop entry so timing covers all attempts.
+    // Audit run 33/001.
+    const generationStart = Date.now();
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const raw = await generateLines(anthropic, prompt);
+        const output = parseGenerationOutput(raw);
+
+        if (!output) {
+          logEvent('gen_retry', { reason: 'format' });
+          retries++;
+          continue;
+        }
+
+        if (!checkSpecificity(prompt, output.line2)) {
+          logEvent('gen_retry', { reason: 'specificity' });
+          retries++;
+          continue;
+        }
+
+        const tonePassed = await checkTone(anthropic, prompt, output.line2);
+        if (!tonePassed) {
+          logEvent('gen_retry', { reason: 'tone' });
+          retries++;
+          continue;
+        }
+
+        lastOutput = output;
+        break;
+      } catch (err) {
+        const status = getApiErrorStatus(err);
+        logError('gen_anthropic_error', {
+          error: String(err),
+          status,
+          attempt,
+        });
+        retries++;
+        // Bail early on 4xx (any 400-499). These are never transient:
+        //   - 400 BadRequest: malformed request — won't succeed on retry.
+        //   - 401 Authentication: missing/invalid API key — won't succeed.
+        //   - 403 PermissionDenied: account / scope issue — won't succeed.
+        //   - 404 NotFound: invalid model name — won't succeed.
+        //   - 422 UnprocessableEntity: prompt rejected — retrying with the
+        //     same prompt won't help.
+        //   - 429 RateLimit: provider throttled us; the lambda budget (~26s)
+        //     can't honor a Retry-After of 30+ seconds, so retrying inside
+        //     the same invocation just burns budget and slams a stressed
+        //     provider. Better to serve safe_fallback now and let the next
+        //     user's lambda hit a fresh window.
+        // 5xx and network-level errors (status === undefined: connection
+        // timeout, DNS failure, socket drop) remain in the retry loop — those
+        // ARE often transient and worth a second attempt within the lambda
+        // budget. Pre-fix every error type retried 2× = up to 36s wasted on a
+        // misconfigured API key before the user saw safe_fallback.
+        // Audit run 33/001.
+        if (status !== undefined && status >= 400 && status < 500) {
+          break;
+        }
+      }
+    }
+
+    const generationDurationMs = Date.now() - generationStart;
+
+    if (!lastOutput) {
+      return respondWithSafeFallback(successRateHeaders);
+    }
+
+    const photoResult = selectPhoto(
+      typedPhotos,
+      lastOutput.line1.length,
+      lastOutput.line2.length,
+      excludePhotoIds
     );
-  }
 
-  if (checkRealPersonFilter(prompt)) {
-    console.log(JSON.stringify({ event: 'gen_block', reason: 'real-person' }));
-    return jsonResponse(
-      { status: 'blocked', message: errorCopy.realPersonBlock },
-      200,
-      successRateHeaders
-    );
-  }
+    if (!photoResult) {
+      return respondWithSafeFallback(successRateHeaders);
+    }
 
-  // Short-circuit: phrase list is free; only call Haiku if the phrase list misses.
-  const isDistress =
-    checkDistressPhraseList(prompt) || (await checkDistressWithHaiku(anthropic, prompt));
+    const fittingRung = photoResult.rung;
+    logEvent('gen_ok', {
+      fittingRung,
+      retries,
+      // Wall time across all attempts (generation + tone check + retries).
+      // Together with `retries` this lets ops chart "how long is each
+      // generation taking" and "is Anthropic getting slower" without
+      // instrumenting an APM. Audit run 33/001.
+      duration_ms: generationDurationMs,
+      model: process.env.ANTHROPIC_MODEL_GEN,
+    });
 
-  if (isDistress) {
-    console.log(JSON.stringify({ event: 'gen_distress' }));
-    const country = (event.headers['x-country'] ?? '').toUpperCase();
     return jsonResponse(
       {
-        status: 'distress',
-        hotline: getHotlineForCountry(country),
+        status: 'ok',
+        line1: lastOutput.line1,
+        line2: lastOutput.line2,
+        photoId: photoResult.photoId,
+        fittingRung,
       },
       200,
       successRateHeaders
     );
-  }
-
-  let lastOutput = null;
-  let retries = 0;
-  // Track the cumulative wall time spent on the Anthropic retry loop. Surfaced
-  // in the gen_ok / gen_safe_fallback log so ops can distinguish "Anthropic
-  // was slow" from "Anthropic returned the wrong shape" without correlating
-  // multiple log lines. Captured at loop entry so timing covers all attempts.
-  // Audit run 33/001.
-  const generationStart = Date.now();
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const raw = await generateLines(anthropic, prompt);
-      const output = parseGenerationOutput(raw);
-
-      if (!output) {
-        console.log(JSON.stringify({ event: 'gen_retry', reason: 'format' }));
-        retries++;
-        continue;
-      }
-
-      if (!checkSpecificity(prompt, output.line2)) {
-        console.log(JSON.stringify({ event: 'gen_retry', reason: 'specificity' }));
-        retries++;
-        continue;
-      }
-
-      const tonePassed = await checkTone(anthropic, prompt, output.line2);
-      if (!tonePassed) {
-        console.log(JSON.stringify({ event: 'gen_retry', reason: 'tone' }));
-        retries++;
-        continue;
-      }
-
-      lastOutput = output;
-      break;
-    } catch (err) {
-      const status = getApiErrorStatus(err);
-      console.error(JSON.stringify({
-        event: 'gen_anthropic_error',
-        error: String(err),
-        status,
-        attempt,
-      }));
-      retries++;
-      // Bail early on 4xx (any 400-499). These are never transient:
-      //   - 400 BadRequest: malformed request — won't succeed on retry.
-      //   - 401 Authentication: missing/invalid API key — won't succeed.
-      //   - 403 PermissionDenied: account / scope issue — won't succeed.
-      //   - 404 NotFound: invalid model name — won't succeed.
-      //   - 422 UnprocessableEntity: prompt rejected — retrying with the
-      //     same prompt won't help.
-      //   - 429 RateLimit: provider throttled us; the lambda budget (~26s)
-      //     can't honor a Retry-After of 30+ seconds, so retrying inside
-      //     the same invocation just burns budget and slams a stressed
-      //     provider. Better to serve safe_fallback now and let the next
-      //     user's lambda hit a fresh window.
-      // 5xx and network-level errors (status === undefined: connection
-      // timeout, DNS failure, socket drop) remain in the retry loop — those
-      // ARE often transient and worth a second attempt within the lambda
-      // budget. Pre-fix every error type retried 2× = up to 36s wasted on a
-      // misconfigured API key before the user saw safe_fallback.
-      // Audit run 33/001.
-      if (status !== undefined && status >= 400 && status < 500) {
-        break;
-      }
-    }
-  }
-
-  const generationDurationMs = Date.now() - generationStart;
-
-  if (!lastOutput) {
-    return respondWithSafeFallback(successRateHeaders);
-  }
-
-  const photoResult = selectPhoto(
-    typedPhotos,
-    lastOutput.line1.length,
-    lastOutput.line2.length,
-    excludePhotoIds
-  );
-
-  if (!photoResult) {
-    return respondWithSafeFallback(successRateHeaders);
-  }
-
-  const fittingRung = photoResult.rung;
-  console.log(JSON.stringify({
-    event: 'gen_ok',
-    fittingRung,
-    retries,
-    // Wall time across all attempts (generation + tone check + retries).
-    // Together with `retries` this lets ops chart "how long is each
-    // generation taking" and "is Anthropic getting slower" without
-    // instrumenting an APM. Audit run 33/001.
-    duration_ms: generationDurationMs,
-    model: process.env.ANTHROPIC_MODEL_GEN,
-  }));
-
-  return jsonResponse(
-    {
-      status: 'ok',
-      line1: lastOutput.line1,
-      line2: lastOutput.line2,
-      photoId: photoResult.photoId,
-      fittingRung,
-    },
-    200,
-    successRateHeaders
-  );
+  });
 };
 
 export { handler };

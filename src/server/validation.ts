@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { GenerationOutput } from '@/types';
 import { checkSynonymMap } from './synonyms';
+import { logError } from './log';
 
 // Hard caps on Sonnet output, mirrored on the wire format. Line 1 holds at 60
 // chars and line 2 at 100 chars at LINE1_FONT_PX/LINE2_FONT_PX before the
@@ -47,7 +48,9 @@ export function parseGenerationOutput(raw: string): GenerationOutput | null {
     // (logged as `gen_retry reason: format` in netlify/functions/generate.ts);
     // surface the parse cause too so a regression in the model output format
     // is diagnosable from Netlify logs.
-    console.error(JSON.stringify({ event: 'gen_parse_failed', error: String(err) }));
+    // Routed through `logError` so the request_id is auto-attached when this
+    // fires inside a `runWithRequestContext` scope. Audit run 40/001.
+    logError('gen_parse_failed', { error: String(err) });
     return null;
   }
 }

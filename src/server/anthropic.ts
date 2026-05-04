@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { logError } from './log';
 
 // Generation request budget. 200 tokens comfortably covers two lines under the
 // 60/100 char caps with JSON wrapper overhead — line1 + line2 + braces is ~50
@@ -193,11 +194,12 @@ export async function checkTone(
     // "transient provider 5xx" from "client-side timeout" without re-running
     // a curl against the API. Same shape applied to gen_anthropic_error and
     // distress_check_failed for grep parity. Audit run 33/001.
-    console.error(JSON.stringify({
-      event: 'tone_check_failed',
+    // Routed through `logError` so the request_id is auto-attached when
+    // this fires inside a `runWithRequestContext` scope. Audit run 40/001.
+    logError('tone_check_failed', {
       error: String(err),
       status: getApiErrorStatus(err),
-    }));
+    });
     return true;
   }
 }

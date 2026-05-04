@@ -410,3 +410,109 @@ describe('generate endpoint — input normalization', () => {
     expect(['ok', 'safe_fallback']).toContain(body.status);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Request correlation (audit run 40/001)
+//
+// Every response carries an X-Request-Id header so the client / browser can
+// quote it back to support, and every server log line emitted on that
+// request's behalf carries the same ID as a `request_id` field. The same
+// AsyncLocalStorage scope wraps the whole handler, so deeper-helper logs
+// (`gen_anthropic_error` from anthropic.ts catches, `gen_parse_failed` from
+// validation.ts, etc.) inherit the ID with no parameter threading.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('generate endpoint — X-Request-Id correlation', () => {
+  it('echoes the inbound x-nf-request-id header back as X-Request-Id on a happy path', async () => {
+    mockHaikuReply('ok');
+    mockSonnetReply('The morning holds quiet possibility.', 'Coffee is again the bravest part of it.');
+    const result = await callHandler(
+      { prompt: 'morning coffee', excludePhotoIds: [] },
+      { 'x-nf-request-id': 'nf-test-correlation-001' }
+    );
+    expect((result as any).headers['X-Request-Id']).toBe('nf-test-correlation-001');
+  });
+
+  it('generates an X-Request-Id when the inbound header is absent', async () => {
+    mockHaikuReply('ok');
+    mockSonnetReply('The morning holds quiet possibility.', 'Coffee is again the bravest part of it.');
+    const result = await callHandler({ prompt: 'morning coffee', excludePhotoIds: [] });
+    const id = (result as any).headers['X-Request-Id'];
+    expect(typeof id).toBe('string');
+    expect(id).toMatch(/^[a-f0-9]{16}$/);
+  });
+
+  it('returns X-Request-Id on the 400-validation error path too', async () => {
+    const result = await callHandler('not-json{', { 'x-nf-request-id': 'rid-400' });
+    expect((result as any).statusCode).toBe(400);
+    expect((result as any).headers['X-Request-Id']).toBe('rid-400');
+  });
+
+  it('attaches request_id to every server log line emitted during a request', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    mockHaikuReply('ok');
+    mockSonnetReply('The morning holds quiet possibility.', 'Coffee is again the bravest part of it.');
+
+    await callHandler(
+      { prompt: 'morning coffee', excludePhotoIds: [] },
+      { 'x-nf-request-id': 'rid-trace' }
+    );
+
+    const events = logSpy.mock.calls
+      .map((c) => c[0])
+      .filter((s): s is string => typeof s === 'string')
+      .map((s) => {
+        try {
+          return JSON.parse(s);
+        } catch {
+          return null;
+        }
+      })
+      .filter((e): e is { event: string; request_id?: string } => e !== null);
+
+    // gen_ok must carry request_id
+    const okEvent = events.find((e) => e.event === 'gen_ok');
+    expect(okEvent).toBeTruthy();
+    expect(okEvent?.request_id).toBe('rid-trace');
+  });
+
+  it('attaches request_id to error logs from helper modules (anthropic, validation)', async () => {
+    // Force a JSON parse failure so validation.ts fires gen_parse_failed,
+    // and an Anthropic error so generate.ts fires gen_anthropic_error.
+    // Both helpers should pick up the request_id from AsyncLocalStorage.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockHaikuReply('ok');
+    // First Sonnet attempt: malformed JSON -> gen_parse_failed in validation.ts
+    anthropicCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: 'not-valid-json{' }],
+    });
+    // Second Sonnet attempt: throw -> gen_anthropic_error in generate.ts
+    const apiError = Object.assign(new Error('500 server error'), { status: 500 });
+    anthropicCreate.mockRejectedValueOnce(apiError);
+    // Third attempt also throws to reach safe_fallback quickly
+    anthropicCreate.mockRejectedValueOnce(apiError);
+
+    await callHandler(
+      { prompt: 'a fresh prompt for the helper-log test', excludePhotoIds: [] },
+      { 'x-nf-request-id': 'rid-helpers' }
+    );
+
+    const events = errSpy.mock.calls
+      .map((c) => c[0])
+      .filter((s): s is string => typeof s === 'string')
+      .map((s) => {
+        try {
+          return JSON.parse(s);
+        } catch {
+          return null;
+        }
+      })
+      .filter((e): e is { event: string; request_id?: string } => e !== null);
+
+    const parseFailed = events.find((e) => e.event === 'gen_parse_failed');
+    const anthropicError = events.find((e) => e.event === 'gen_anthropic_error');
+
+    expect(parseFailed?.request_id, 'gen_parse_failed must carry request_id').toBe('rid-helpers');
+    expect(anthropicError?.request_id, 'gen_anthropic_error must carry request_id').toBe('rid-helpers');
+  });
+});

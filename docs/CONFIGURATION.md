@@ -125,3 +125,6 @@ manually for diagnostics.
 - **Why CSRF shield is needed**: [`netlify/functions/generate.ts`](../netlify/functions/generate.ts) (`isOriginAllowed` doc-block)
 - **Scheduled-job & background-process inventory** (full health assessment of every background-ish surface in the codebase): [`audit-reports/39_SCHEDULED_JOBS_REPORT_001_*.md`](../audit-reports/)
 - **Why we cap retries at 2**: [`audit-reports/33_EXTERNAL_INTEGRATION_REPORT_001_*.md`](../audit-reports/)
+- **Operational runbooks per failure mode**: [`docs/RUNBOOKS.md`](RUNBOOKS.md) — Anthropic outage, Firestore unreachable, CSRF shield disabled, cost spike, photo CDN outage, etc.
+- **Health endpoint**: [`netlify/functions/health.ts`](../netlify/functions/health.ts) — `GET /api/health` (readiness) and `GET /api/health?mode=live` (liveness). Audit 40/001.
+- **Request correlation IDs**: [`src/server/log.ts`](../src/server/log.ts) — every server log line and response carries the same `request_id` / `X-Request-Id` so a single user's request is grep-able end-to-end. Audit 40/001.
