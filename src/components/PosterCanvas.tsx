@@ -56,10 +56,18 @@ export function PosterCanvas({ line1, line2, photoId, onFitFailure, onReady }: P
         if (!photo) return;
 
         await ensureFontsReady();
+        if (cancelled) return;
         const img = await loadImage(getPhotoUrl(photoId));
         if (cancelled) return;
 
         const fit = await checkFit(line1, line2, photo);
+        // The Regenerate button is reachable from `settled` phase before the
+        // canvas actually finishes drawing — a fast click can unmount this
+        // effect mid-checkFit. Without this guard, a stale `!fit.ok` branch
+        // would call onFitFailure and overwrite App's freshly-set `loading`
+        // posterState with `error`, flashing a stale error over the new
+        // generation. Mirrors the existing post-loadImage cancelled check.
+        if (cancelled) return;
         if (!fit.ok) {
           onFitFailure?.();
           return;
