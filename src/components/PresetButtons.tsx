@@ -13,6 +13,13 @@ export function PresetButtons({ selected, onSelect, disabled }: PresetButtonsPro
       {presets.map((preset) => (
         <Button
           key={preset}
+          // Without `type="button"`, an unset type on a <button> inside a
+          // <form> defaults to `type="submit"` (HTML spec). Clicking a preset
+          // would then fire the form's onSubmit alongside the React onClick,
+          // generating with whichever prompt value was captured in the
+          // handleGenerate closure at click time — i.e. before the preset's
+          // setPrompt landed. Audit run 35/001.
+          type="button"
           variant="preset"
           size="sm"
           disabled={disabled}
