@@ -83,7 +83,7 @@ const RequestSchema = z.object({
 
 When adding a new request field:
 1. Add it to `RequestSchema` with explicit length / shape constraints.
-2. Update `GenerateRequest` in `src/types/index.ts` so client and server types stay aligned.
+2. Update `GenerateRequest` in `src/types/index.ts` so client and server types stay aligned. **If the Zod schema applies `.default(...)`, the TypeScript type field MUST be optional** (`field?: T`) — type and wire-format reality must agree, otherwise server-to-server callers can't omit it without an unsafe cast. This was the drift fixed in audit run 22/001 for `excludePhotoIds`.
 3. Add a contract test in `tests/server/generate-contract.test.ts` covering at least one accept and one reject case.
 
 ---
@@ -113,6 +113,8 @@ Body shape uses the discriminated union in `src/types/index.ts:GenerateResponse`
 3. Add at least one contract test that proves the handler can emit that variant.
 
 **Never** introduce a response body without a `status` field — every consumer narrows on it.
+
+**User-facing message strings** (in `blocked`, `rate_limited`, and similar variants where the client renders the server's `message` directly) MUST be drawn from `errorCopy` in `src/content/copy.ts`, not hardcoded as literals in the handler. The handler imports `errorCopy` and references `errorCopy.rateLimit`, `errorCopy.slurBlock`, `errorCopy.realPersonBlock`, etc. Pinned by the `errorCopy parity` block in `tests/server/generate-contract.test.ts`. Hardcoded duplicates create silent drift when one side updates the copy and the other doesn't (the trap that audit run 22/001 closed).
 
 ---
 
