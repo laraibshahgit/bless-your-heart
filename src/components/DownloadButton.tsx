@@ -50,34 +50,43 @@ export function DownloadButton() {
     resetRef.current = setTimeout(() => setStatus('idle'), SUCCESS_DISPLAY_MS);
   }
 
+  // Single live region under the button — assistive tech announces the
+  // current status (iOS hint, success confirmation, or error) when it
+  // changes. Using one container with `aria-live="polite"` so the announcer
+  // doesn't fight when status transitions through multiple values during a
+  // single download. `aria-busy` on the button while downloading is a small
+  // additional cue for AT users. Audit run 34/001.
   return (
     <div className="text-center">
       <Button
         variant="primary"
         onClick={handleDownload}
         disabled={status === 'downloading'}
+        aria-busy={status === 'downloading' || undefined}
       >
-        <Download className="w-4 h-4" />
+        <Download className="w-4 h-4" aria-hidden="true" />
         Download
       </Button>
 
-      {showIOSHint && (
-        <p className="mt-2 text-caption text-ink-faint italic">
-          {downloadCopy.iosHint}
-        </p>
-      )}
+      <div aria-live="polite" aria-atomic="true">
+        {showIOSHint && (
+          <p className="mt-2 text-caption text-ink-faint italic">
+            {downloadCopy.iosHint}
+          </p>
+        )}
 
-      {status === 'confirmed' && (
-        <p className="mt-2 text-caption text-ink-soft italic animate-in fade-in duration-200">
-          {downloadConfirmation}
-        </p>
-      )}
+        {status === 'confirmed' && (
+          <p className="mt-2 text-caption text-ink-soft italic animate-in fade-in duration-200">
+            {downloadConfirmation}
+          </p>
+        )}
 
-      {status === 'error' && (
-        <p className="mt-2 text-caption text-feedback-quiet italic">
-          {errorCopy.frontend.downloadFailed}
-        </p>
-      )}
+        {status === 'error' && (
+          <p className="mt-2 text-caption text-feedback-quiet italic">
+            {errorCopy.frontend.downloadFailed}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

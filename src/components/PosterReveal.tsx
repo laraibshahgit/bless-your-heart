@@ -30,7 +30,18 @@ export function PosterReveal({ state, onRegenerate, onCanvasFailure }: PosterRev
     <div ref={containerRef} className="w-full max-w-xl mx-auto mt-breathe space-y-4">
       {state.phase === 'loading' && (
         <div className="text-center py-12">
-          <p className="font-serif italic text-body-lg text-ink-soft animate-pulse-opacity">
+          {/*
+            role="status" + aria-live="polite" makes screen readers announce
+            the rotating loading phrase when it appears, without interrupting
+            whatever the user was hearing. Without it, the loading state is
+            silent for non-sighted users — they hear nothing between clicking
+            Generate and the canvas being announced. Audit run 34/001.
+          */}
+          <p
+            role="status"
+            aria-live="polite"
+            className="font-serif italic text-body-lg text-ink-soft animate-pulse-opacity"
+          >
             {state.phrase}
           </p>
         </div>
@@ -47,7 +58,7 @@ export function PosterReveal({ state, onRegenerate, onCanvasFailure }: PosterRev
           />
           <div className="flex justify-center gap-3">
             <Button variant="secondary" onClick={onRegenerate}>
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-4 h-4" aria-hidden="true" />
               Regenerate
             </Button>
             <DownloadButton />
@@ -57,7 +68,15 @@ export function PosterReveal({ state, onRegenerate, onCanvasFailure }: PosterRev
 
       {state.phase === 'error' && (
         <div className="text-center py-12 space-y-4">
-          <p className="font-serif italic text-body text-feedback-quiet">{state.message}</p>
+          {/*
+            role="alert" gives the error announcement priority over any
+            in-flight live-region updates (a screen reader will interrupt
+            and read the error). Mirrors the loading branch above. Audit
+            run 34/001.
+          */}
+          <p role="alert" className="font-serif italic text-body text-feedback-quiet">
+            {state.message}
+          </p>
           {state.retryable && (
             <Button variant="secondary" onClick={onRegenerate}>
               Try Again

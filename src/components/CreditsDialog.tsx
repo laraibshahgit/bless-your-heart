@@ -6,8 +6,24 @@ export function CreditsDialog() {
 
   return (
     <Dialog>
+      {/*
+        Inline trigger styled as a footer link. Uses a real <button> so it
+        gets keyboard activation (Enter/Space) and a focus ring without
+        extra wiring. Tailwind classes preserve the underlined-link visual.
+        CLAUDE.md asks for the shadcn Button on all interactions — we keep
+        the raw element here because the footer's text-link aesthetic does
+        not match any existing Button variant (primary/secondary/preset/ghost
+        all carry padding + a focus-ring offset). The `focus-visible` ring
+        below restores the keyboard a11y story the shadcn variants give for
+        free. Audit run 34/001.
+      */}
       <DialogTrigger asChild>
-        <button className="text-accent-sage hover:underline">see credits</button>
+        <button
+          type="button"
+          className="text-accent-sage hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-sage/50 focus-visible:ring-offset-2 focus-visible:ring-offset-paper rounded-sm"
+        >
+          see credits
+        </button>
       </DialogTrigger>
       <DialogContent className="bg-paper border-border-mist max-h-[60vh] overflow-y-auto">
         <DialogHeader>

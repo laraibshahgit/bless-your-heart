@@ -246,7 +246,11 @@ export default function App() {
           </form>
 
           {inlineError && (
-            <p className="text-caption text-feedback-quiet italic">{inlineError}</p>
+            // role="alert" makes assistive tech announce blocked/rate-limited
+            // messages immediately when they appear. Without it, users who
+            // submitted via screen reader would silently see no feedback —
+            // the form just stops responding. Audit run 34/001.
+            <p role="alert" className="text-caption text-feedback-quiet italic">{inlineError}</p>
           )}
         </div>
 

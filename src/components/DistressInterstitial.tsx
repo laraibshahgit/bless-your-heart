@@ -1,4 +1,4 @@
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import type { Hotline } from '@/types';
 import { track } from '@/lib/analytics';
@@ -51,12 +51,21 @@ export function DistressInterstitial({ open, hotline, onClose }: DistressInterst
         className="bg-paper border-border-mist max-w-md text-center space-y-4"
         aria-modal="true"
       >
-        <p className="font-serif text-headline italic text-ink-deep">
+        {/*
+          Radix Dialog requires a DialogTitle for screen-reader accessibility
+          (else it logs `DialogContent requires a DialogTitle ...` to the
+          console and the modal announces with no name). Rendered as the
+          headline both visually and semantically — we keep the existing
+          serif/italic styling via className override instead of a separate
+          paragraph. Body uses DialogDescription so Radix wires up
+          `aria-describedby` automatically. Audit run 34/001.
+        */}
+        <DialogTitle className="font-serif text-headline italic text-ink-deep tracking-normal">
           {distressCopy.headline}
-        </p>
-        <p className="font-serif text-body text-ink-soft italic">
+        </DialogTitle>
+        <DialogDescription className="font-serif text-body text-ink-soft italic">
           {distressCopy.body}
-        </p>
+        </DialogDescription>
         {hotline.phone && telHref && (
           <p className="font-serif text-body-lg font-medium text-ink-deep">
             <a href={telHref} className="hover:text-accent-sage">
