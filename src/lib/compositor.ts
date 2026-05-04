@@ -41,12 +41,45 @@ function require2dContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   return ctx;
 }
 
-export async function loadImage(url: string): Promise<HTMLImageElement> {
+// Outer cap on the image fetch + decode round-trip. `img.decode()` resolves once
+// the bytes are downloaded AND the browser has a paint-ready bitmap; if the CDN
+// stalls (DNS hang, TLS failure, mid-stream socket drop), the promise never
+// settles and the user sits on a blank canvas indefinitely after a successful
+// /generate response. The HTML <img> element has no AbortSignal support yet, so
+// we race `decode()` with a setTimeout — on timeout we surface the error so the
+// PosterCanvas catch path logs `poster_render_failed` for ops grep, and clear
+// `img.src` as a soft hint that the browser can drop the in-flight fetch.
+// 15s gives broadband + slow-3G enough headroom to win on cold cache without
+// keeping a stuck user waiting past attention span; in practice firebasestorage
+// serves these photos in <2s on broadband and <8s on slow-3G.
+export const IMAGE_LOAD_TIMEOUT_MS = 15_000;
+
+export async function loadImage(
+  url: string,
+  timeoutMs: number = IMAGE_LOAD_TIMEOUT_MS
+): Promise<HTMLImageElement> {
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.src = url;
-  await img.decode();
-  return img;
+
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      img.decode(),
+      new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          // Hint to the browser that the in-flight fetch is unwanted. Spec
+          // doesn't guarantee abort, but Chromium/WebKit treat src reassignment
+          // as a cancel signal in practice; worst case it's a no-op.
+          img.src = '';
+          reject(new Error(`Image load timeout after ${timeoutMs}ms: ${url}`));
+        }, timeoutMs);
+      }),
+    ]);
+    return img;
+  } finally {
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+  }
 }
 
 interface CompositeOptions {

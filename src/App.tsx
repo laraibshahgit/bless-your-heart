@@ -8,7 +8,7 @@ import { GenerateButton } from '@/components/GenerateButton';
 import { PosterReveal } from '@/components/PosterReveal';
 import { callGenerate } from '@/lib/api';
 import { track } from '@/lib/analytics';
-import { loadingPhrases } from '@/content/copy';
+import { errorCopy, loadingPhrases } from '@/content/copy';
 import { MAX_EXCLUDE_PHOTO_IDS, type PosterPhase, type Hotline } from '@/types';
 
 const DistressInterstitial = lazy(() =>
@@ -139,6 +139,20 @@ export default function App() {
     track('regenerate_clicked', { regenDepth: excludePhotoIds.length });
   }
 
+  // Fires when the canvas pipeline can't produce a poster despite the API
+  // returning `ok` — typically a hung photo CDN (loadImage 15s timeout) or a
+  // rare `checkFit` miss. Without this handler the UI sat in `settled` with a
+  // blank canvas indefinitely; route to `error` so the user gets the standard
+  // retry affordance instead of a silent dead end.
+  const handleCanvasFailure = useCallback(() => {
+    track('canvas_render_failed');
+    setPosterState({
+      phase: 'error',
+      message: errorCopy.frontend.canvasWriteFailed,
+      retryable: true,
+    });
+  }, []);
+
   return (
     <div className="min-h-screen bg-cream flex flex-col">
       <Header />
@@ -185,6 +199,7 @@ export default function App() {
         <PosterReveal
           state={posterState}
           onRegenerate={handleRegenerate}
+          onCanvasFailure={handleCanvasFailure}
         />
       </main>
 

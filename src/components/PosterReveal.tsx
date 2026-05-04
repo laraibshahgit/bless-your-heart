@@ -8,9 +8,13 @@ import type { PosterPhase } from '@/types';
 interface PosterRevealProps {
   state: PosterPhase;
   onRegenerate: () => void;
+  // Fired when the canvas pipeline cannot produce a poster after the API
+  // already returned `ok` — image fetch timeout, decode failure, or a fit
+  // miss. Without this, the UI strands in `settled` with a blank canvas.
+  onCanvasFailure?: () => void;
 }
 
-export function PosterReveal({ state, onRegenerate }: PosterRevealProps) {
+export function PosterReveal({ state, onRegenerate, onCanvasFailure }: PosterRevealProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [canvasReady, setCanvasReady] = useState(false);
 
@@ -39,6 +43,7 @@ export function PosterReveal({ state, onRegenerate }: PosterRevealProps) {
             line2={state.line2}
             photoId={state.photoId}
             onReady={() => setCanvasReady(true)}
+            onFitFailure={onCanvasFailure}
           />
           <div className="flex justify-center gap-3">
             <Button variant="secondary" onClick={onRegenerate}>

@@ -5,7 +5,7 @@ vi.mock('@/lib/fonts', () => ({
   ensureFontsReady: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { setupCanvas, composite, checkFit } from '@/lib/compositor';
+import { setupCanvas, composite, checkFit, loadImage } from '@/lib/compositor';
 import type { Photo } from '@/types';
 
 function makePhoto(overrides: Partial<Photo> = {}): Photo {
@@ -386,5 +386,76 @@ describe('checkFit', () => {
       // line1 is the limiting factor (800/1000 = 0.816)
       expect(result.scale).toBeCloseTo(816 / 1000, 2);
     }
+  });
+});
+
+// `loadImage` race against a wall-clock timeout. Pre-fix, a hung CDN response
+// (decode() never settles) left the user staring at a blank canvas after a
+// successful /generate response — the PosterCanvas catch handler never fired
+// because the decode promise never rejected. The 15s default is a wall-clock
+// safety net, not a normal-case latency budget; tests here pass a tight
+// override so jsdom finishes quickly.
+describe('loadImage', () => {
+  let OriginalImage: typeof Image;
+
+  beforeEach(() => {
+    OriginalImage = globalThis.Image;
+  });
+
+  afterEach(() => {
+    globalThis.Image = OriginalImage;
+  });
+
+  function stubImage(decodeImpl: (img: any) => Promise<void>) {
+    globalThis.Image = function () {
+      const img: any = { src: '', crossOrigin: '' };
+      img.decode = () => decodeImpl(img);
+      return img;
+    } as unknown as typeof Image;
+  }
+
+  it('resolves with the image when decode() finishes before the timeout', async () => {
+    stubImage(() => Promise.resolve());
+    const result = await loadImage('https://photos/test.jpg', 5_000);
+    expect(result).toBeDefined();
+    expect((result as unknown as { src: string }).src).toBe('https://photos/test.jpg');
+  });
+
+  it('rejects with a descriptive error when decode() exceeds the timeout', async () => {
+    // Returns a Promise that never settles — simulates a CDN that accepted the
+    // TCP/TLS handshake but never streams body bytes. Without the timeout,
+    // Promise.race would hang forever; with it, the loader rejects fast and
+    // the PosterCanvas catch handler logs `poster_render_failed`.
+    stubImage(() => new Promise<void>(() => {}));
+    await expect(loadImage('https://photos/hung.jpg', 50)).rejects.toThrow(
+      /Image load timeout after 50ms: https:\/\/photos\/hung\.jpg/
+    );
+  });
+
+  it('clears the timeout on success (no dangling rejection)', async () => {
+    // Flag flips true if the timeout would have fired by re-using the same
+    // image instance and instrumenting the src setter. If clearTimeout works,
+    // the setter is only invoked twice (initial assignment + the test's own
+    // post-resolve assertion); if it leaks, the timeout would null `src` after
+    // the test resolves.
+    let images: Array<{ src: string }> = [];
+    globalThis.Image = function () {
+      const img: any = { src: '', crossOrigin: '' };
+      img.decode = () => Promise.resolve();
+      images.push(img);
+      return img;
+    } as unknown as typeof Image;
+
+    await loadImage('https://photos/ok.jpg', 30);
+    // Wait past the would-be timeout and confirm src wasn't nulled by a stray fire.
+    await new Promise((r) => setTimeout(r, 80));
+    expect(images[0].src).toBe('https://photos/ok.jpg');
+  });
+
+  it('propagates the underlying decode error when decode() rejects', async () => {
+    stubImage(() => Promise.reject(new Error('decode failed')));
+    await expect(loadImage('https://photos/broken.jpg', 5_000)).rejects.toThrow(
+      /decode failed/
+    );
   });
 });
