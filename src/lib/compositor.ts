@@ -1,4 +1,4 @@
-import type { Photo } from '@/types';
+import type { FitResult, Photo } from '@/types';
 import { ensureFontsReady } from './fonts';
 import {
   POSTER_LOGICAL_SIZE_PX,
@@ -144,19 +144,11 @@ function drawWatermark(ctx: CanvasRenderingContext2D, photo: Photo): void {
   ctx.globalAlpha = 1.0;
 }
 
-type FitCheckResult = {
-  ok: true;
-  scale: number;
-} | {
-  ok: false;
-  reason: 'overflow';
-};
-
 export async function checkFit(
   line1: string,
   line2: string,
   photo: Photo
-): Promise<FitCheckResult> {
+): Promise<FitResult> {
   await ensureFontsReady();
 
   const offscreen = document.createElement('canvas');

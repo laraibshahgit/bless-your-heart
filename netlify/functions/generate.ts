@@ -9,6 +9,14 @@ import { getHotlineForCountry } from '../../src/server/hotlines';
 import { safeFallbacks } from '../../src/server/fallbacks';
 import photos from '../../src/data/photos.json';
 import { MAX_PROMPT_LENGTH, type Photo, type GenerateResponse, type RateLimitResult } from '../../src/types';
+// User-facing wire-format copy lives in `src/content/copy.ts` — the canonical
+// source of truth for in-voice messaging. The server imports the strings here
+// so a single edit to `errorCopy` updates both the client palette and the API
+// response body, eliminating the silent drift that hardcoded duplicates create.
+// `copy.ts` has no client-only deps (pure data), so it is safe to bundle into
+// the lambda. Pinned by the `errorCopy parity` block in
+// `tests/server/generate-contract.test.ts`.
+import { errorCopy } from '../../src/content/copy';
 
 // Photo library is currently 10 entries (src/data/photos.json). 50 is generous
 // for any session and bounds attacker-controlled array length — without it,
@@ -162,7 +170,7 @@ const handler: Handler = async (event: HandlerEvent) => {
         return jsonResponse(
           {
             status: 'rate_limited',
-            message: 'Even the universe has a daily limit. Try again in a bit.',
+            message: errorCopy.rateLimit,
             retryAfterSec: rateResult.retryAfterSec,
             resetAt: rateResult.resetAt,
           },
@@ -180,7 +188,7 @@ const handler: Handler = async (event: HandlerEvent) => {
   if (checkSlurFilter(prompt)) {
     console.log(JSON.stringify({ event: 'gen_block', reason: 'slur' }));
     return jsonResponse(
-      { status: 'blocked', message: "Let's try a different one." },
+      { status: 'blocked', message: errorCopy.slurBlock },
       200,
       successRateHeaders
     );
@@ -189,10 +197,7 @@ const handler: Handler = async (event: HandlerEvent) => {
   if (checkRealPersonFilter(prompt)) {
     console.log(JSON.stringify({ event: 'gen_block', reason: 'real-person' }));
     return jsonResponse(
-      {
-        status: 'blocked',
-        message: "The voice doesn't punch at people. Try a situation instead.",
-      },
+      { status: 'blocked', message: errorCopy.realPersonBlock },
       200,
       successRateHeaders
     );

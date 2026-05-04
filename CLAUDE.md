@@ -93,7 +93,7 @@ See [`.env.example`](.env.example) for the canonical template.
 
 ### Frontend
 
-- **Single page app** — no router. State machine in [`App.tsx`](src/App.tsx) drives `PosterPhase` (`idle | loading | revealing | settled | error`)
+- **Single page app** — no router. State machine in [`App.tsx`](src/App.tsx) drives `PosterPhase` (`idle | loading | settled | error`). The `revealing` branch was removed in audit run 22/001 — no producer ever emitted it and no consumer narrowed on it
 - **Native Canvas API for compositing** — NEVER use html2canvas. Pixel-perfect serif text is required; raster libraries blur it
 - **ALWAYS `await ensureFontsReady()` before `measureText()` or `fillText()`** — falling back to system serif silently breaks the joke. Helper lives in [`src/lib/fonts.ts`](src/lib/fonts.ts) and lazy-caches the promise
 - **Shadcn Button is mandatory for all `<button>` interactions** — variants: `primary | secondary | preset | ghost`. Never inline raw `<button>` (the [`PromptInput`](src/components/PromptInput.tsx) raw `<input>` is intentional — Shadcn `Input` doesn't apply the same serif placeholder treatment)
@@ -103,7 +103,7 @@ See [`.env.example`](.env.example) for the canonical template.
 - **`sessionStorage` key for prompt persistence**: `byh:lastPrompt` (300ms debounce)
 - **800ms minimum anticipation beat** — `LOAD_FLOOR_MS` in [`App.tsx`](src/App.tsx). Even instant API responses must wait
 - **Client fetch timeout** — `callGenerate` in [`src/lib/api.ts`](src/lib/api.ts) sets `signal: AbortSignal.timeout(GENERATE_FETCH_TIMEOUT_MS)` (30s). Netlify lambda kill is 10–26s, so this only fires when the response stream hangs past that (CDN edge weirdness, mid-stream lambda crash). Without the signal a hung body would pin the user's tab indefinitely. Pinned by `attaches an AbortSignal to the fetch call` in [`tests/client/api.test.ts`](tests/client/api.test.ts) — do not drop the `signal` field when refactoring `callGenerate`
-- **In-voice copy lives in [`src/content/`](src/content/)** — never hardcode user-facing strings in components. `copy.ts` (errors, loading, confirmation), `presets.ts` (mood chips), `placeholders.ts` (input)
+- **In-voice copy lives in [`src/content/`](src/content/)** — never hardcode user-facing strings in components OR in the Netlify function. `copy.ts` (errors, loading, confirmation), `presets.ts` (mood chips), `placeholders.ts` (input). The Netlify function imports `errorCopy` from `@/content/copy` for the `rate_limited`, `blocked` (slur), and `blocked` (real-person) response messages — pinned by the `errorCopy parity` block in [`tests/server/generate-contract.test.ts`](tests/server/generate-contract.test.ts) (audit run 22/001 eliminated the prior literal-duplication pattern)
 
 ### Backend
 

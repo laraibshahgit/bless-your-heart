@@ -42,7 +42,13 @@ export interface Photo {
 
 export interface GenerateRequest {
   prompt: string;
-  excludePhotoIds: string[];
+  // Optional on the wire — the server's Zod schema applies `.default([])` so a
+  // request without `excludePhotoIds` is valid. The browser client always sends
+  // an array (see `src/lib/api.ts`); making this optional in the type pins the
+  // wire-format contract for any future server-to-server caller without a cast.
+  // Pinned by `accepts a request omitting excludePhotoIds` in
+  // `tests/server/generate-contract.test.ts`.
+  excludePhotoIds?: string[];
 }
 
 export interface Hotline {
@@ -94,7 +100,6 @@ export type FitResult =
 export type PosterPhase =
   | { phase: 'idle' }
   | { phase: 'loading'; phrase: string }
-  | { phase: 'revealing' }
   | { phase: 'settled'; line1: string; line2: string; photoId: string; fittingRung: 1 | 2 | 3 | 4 }
   | { phase: 'error'; message: string; retryable: boolean };
 

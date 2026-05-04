@@ -320,9 +320,9 @@ describe('contract — request validation', () => {
   it('accepts a request omitting excludePhotoIds (server defaults it to [])', async () => {
     mockHaikuReply('ok');
     mockSonnetReply('The morning holds quiet possibility.', 'Coffee is the bravest part of it.');
-    // The TYPE marks excludePhotoIds as required; the SERVER applies a Zod .default([]).
-    // This test pins the actual behavior so a future tightening of the schema
-    // (removing .default) will trigger a clear failure here.
+    // The type marks excludePhotoIds as optional, mirroring the Zod schema's
+    // `.default([])`. This test pins the runtime behavior so a future tightening
+    // of the schema (removing .default) will trigger a clear failure here.
     const result = await callHandler({ prompt: 'morning coffee' });
     expect((result as any).statusCode).toBe(200);
   });
@@ -649,5 +649,66 @@ describe('contract — schema accepts all documented variants', () => {
     expect(() =>
       GenerateResponseSchema.parse({ status: 'error', message: 'hi' })
     ).toThrow();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// errorCopy parity — server response messages MUST be drawn from the canonical
+// in-voice copy palette in `src/content/copy.ts`. Hardcoded duplicates create
+// silent drift when the copy is updated on one side only. These tests pin the
+// server output against `errorCopy` so any future regression to literals fails.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('contract — server response messages match errorCopy (no copy drift)', () => {
+  it('blocked (slur) message equals errorCopy.slurBlock', async () => {
+    const { errorCopy } = await import('@/content/copy');
+    const result = await callHandler({ prompt: 'that testblockedslur', excludePhotoIds: [] });
+    const body = JSON.parse((result as any).body);
+    expect(body.status).toBe('blocked');
+    expect(body.message).toBe(errorCopy.slurBlock);
+  });
+
+  it('blocked (real-person) message equals errorCopy.realPersonBlock', async () => {
+    const { errorCopy } = await import('@/content/copy');
+    const result = await callHandler({ prompt: 'my boss Karen is loud', excludePhotoIds: [] });
+    const body = JSON.parse((result as any).body);
+    expect(body.status).toBe('blocked');
+    expect(body.message).toBe(errorCopy.realPersonBlock);
+  });
+
+  it('rate_limited message equals errorCopy.rateLimit', async () => {
+    const original = process.env.RATE_LIMIT_PER_HOUR;
+    process.env.RATE_LIMIT_PER_HOUR = '1';
+    try {
+      vi.doMock('@/server/rateLimit', async () => {
+        const actual = await vi.importActual<typeof import('@/server/rateLimit')>(
+          '@/server/rateLimit'
+        );
+        return {
+          ...actual,
+          checkAndIncrementRateLimit: vi.fn().mockResolvedValue({ allowed: false, retryAfterSec: 60 }),
+        };
+      });
+      vi.resetModules();
+      const { handler: freshHandler } = await import('../../netlify/functions/generate');
+      const { errorCopy } = await import('@/content/copy');
+      const result = await freshHandler(
+        {
+          httpMethod: 'POST',
+          body: JSON.stringify({ prompt: 'hi', excludePhotoIds: [] }),
+          headers: {},
+        } as any,
+        {} as any,
+        () => undefined
+      );
+      const body = JSON.parse((result as any).body);
+      expect(body.status).toBe('rate_limited');
+      expect(body.message).toBe(errorCopy.rateLimit);
+    } finally {
+      vi.doUnmock('@/server/rateLimit');
+      vi.resetModules();
+      if (original === undefined) delete process.env.RATE_LIMIT_PER_HOUR;
+      else process.env.RATE_LIMIT_PER_HOUR = original;
+    }
   });
 });
