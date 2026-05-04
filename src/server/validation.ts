@@ -108,10 +108,19 @@ export function checkSpecificity(prompt: string, line2: string): boolean {
 
   if (contentWords.length === 0) return true;
 
-  const directOverlap = contentWords.some(
-    (w) => line2Tokens.includes(w) || line2Tokens.includes(stem(w)) ||
-           line2Tokens.some((lt) => stem(lt) === stem(w))
-  );
+  // Stem each line2 token once into a Set so the inner overlap check is
+  // amortized O(1) per content-word lookup instead of scanning + restemming
+  // line2Tokens every iteration. The previous shape recomputed `stem(w)` once
+  // per inner iteration of `.some(lt => stem(lt) === stem(w))`, doing O(n*m)
+  // stem calls on every prompt; this keeps the outer pass O(n+m).
+  const line2TokenSet = new Set(line2Tokens);
+  const line2StemSet = new Set(line2Tokens.map(stem));
+
+  const directOverlap = contentWords.some((w) => {
+    if (line2TokenSet.has(w)) return true;
+    const stemmed = stem(w);
+    return line2TokenSet.has(stemmed) || line2StemSet.has(stemmed);
+  });
 
   if (directOverlap) return true;
 

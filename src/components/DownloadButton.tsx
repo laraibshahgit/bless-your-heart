@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
 import { downloadPoster, isIOSSafari } from '@/lib/download';
@@ -14,6 +14,12 @@ const SUCCESS_DISPLAY_MS = 2500;
 export function DownloadButton() {
   const [status, setStatus] = useState<'idle' | 'downloading' | 'confirmed' | 'error'>('idle');
   const [showIOSHint, setShowIOSHint] = useState(false);
+  // Track the auto-reset timer so we can clear it on unmount and avoid
+  // setStatus on a dropped component (PosterReveal unmounts this whole subtree
+  // when the user regenerates from the 'settled' state).
+  const resetRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => () => clearTimeout(resetRef.current), []);
 
   async function handleDownload() {
     const canvas = document.querySelector('canvas');
@@ -21,6 +27,7 @@ export function DownloadButton() {
 
     const onIOSSafari = isIOSSafari();
 
+    clearTimeout(resetRef.current);
     setStatus('downloading');
     if (onIOSSafari) setShowIOSHint(true);
 
@@ -28,7 +35,7 @@ export function DownloadButton() {
 
     if (!success) {
       setStatus('error');
-      setTimeout(() => setStatus('idle'), ERROR_DISPLAY_MS);
+      resetRef.current = setTimeout(() => setStatus('idle'), ERROR_DISPLAY_MS);
       return;
     }
 
@@ -40,7 +47,7 @@ export function DownloadButton() {
     }
 
     setStatus('confirmed');
-    setTimeout(() => setStatus('idle'), SUCCESS_DISPLAY_MS);
+    resetRef.current = setTimeout(() => setStatus('idle'), SUCCESS_DISPLAY_MS);
   }
 
   return (

@@ -16,15 +16,32 @@ export function PosterCanvas({ line1, line2, photoId, onFitFailure, onReady }: P
   const [displaySize, setDisplaySize] = useState(360);
 
   useEffect(() => {
-    function updateSize() {
+    function computeSize(): number {
       const w = window.innerWidth;
-      if (w < 640) setDisplaySize(Math.min(w - 32, 360));
-      else if (w < 1024) setDisplaySize(480);
-      else setDisplaySize(540);
+      if (w < 640) return Math.min(w - 32, 360);
+      if (w < 1024) return 480;
+      return 540;
     }
-    updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    setDisplaySize(computeSize());
+
+    // rAF-throttle the resize handler: native `resize` fires per frame during
+    // window drags (60+/sec on desktop). Without throttling, every fire would
+    // setState → re-render PosterCanvas → re-execute the render-effect →
+    // re-decode + redraw the photo. Coalescing to one update per animation
+    // frame keeps the canvas redraw work bounded by the display refresh rate.
+    let frame = 0;
+    function onResize() {
+      if (frame !== 0) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setDisplaySize(computeSize());
+      });
+    }
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => {
+      window.removeEventListener('resize', onResize);
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
   }, []);
 
   useEffect(() => {

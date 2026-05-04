@@ -168,11 +168,21 @@ const handler: Handler = async (event: HandlerEvent) => {
 
   let rateResult: RateLimitResult | null = null;
   if (process.env.RATE_LIMIT_PER_HOUR !== '9999') {
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     try {
       const { checkAndIncrementRateLimit } = await import('../../src/server/rateLimit');
+      // Lambda runtime caveat: a setTimeout that never fires keeps the event
+      // loop alive between invocations on a warm container. The previous shape
+      // armed a 3s timer and never cleared it on the success path, leaving a
+      // pending callback in the queue after the response was returned. Capture
+      // the handle so the finally block can drop it the moment the rate-limit
+      // call wins the race; clean exit, no zombie timers.
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error('rate limit timeout')), RATE_LIMIT_TIMEOUT_MS);
+      });
       rateResult = await Promise.race([
         checkAndIncrementRateLimit(hashedIp),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('rate limit timeout')), RATE_LIMIT_TIMEOUT_MS)),
+        timeoutPromise,
       ]);
       if (!rateResult.allowed) {
         console.log(JSON.stringify({ event: 'gen_rate_limited', hashedIp }));
@@ -194,6 +204,8 @@ const handler: Handler = async (event: HandlerEvent) => {
     } catch (err) {
       console.error(JSON.stringify({ event: 'rate_limit_check_failed', error: String(err) }));
       rateResult = null;
+    } finally {
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
     }
   }
   const successRateHeaders = rateLimitHeaders(rateResult);

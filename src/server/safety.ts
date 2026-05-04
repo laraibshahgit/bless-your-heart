@@ -3,12 +3,19 @@ import { distressPhrases } from './distress-phrases';
 import { slurList } from './slur-list';
 import { SAFETY_MAX_TOKENS, SAFETY_TEMPERATURE, ANTHROPIC_REQUEST_TIMEOUT_MS } from './anthropic';
 
+// Precompile slur regexes once at module load. Without this, every request
+// rebuilt the regex array on the hot path — O(n) RegExp constructor calls per
+// request where n = slur list size. The list is static (imported from a frozen
+// data module), so a single compilation at module-eval time is correct and
+// cheaper. vi.mock('@/server/slur-list') hoists above this evaluation, so test
+// suites that swap the list still get their replacement compiled here.
+const SLUR_PATTERNS: RegExp[] = slurList.map(
+  (slur) => new RegExp(`\\b${escapeRegex(slur)}\\b`, 'i'),
+);
+
 export function checkSlurFilter(prompt: string): boolean {
   const normalized = prompt.toLowerCase();
-  return slurList.some((slur) => {
-    const pattern = new RegExp(`\\b${escapeRegex(slur)}\\b`, 'i');
-    return pattern.test(normalized);
-  });
+  return SLUR_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 const RELATIONSHIP_WORDS = [
@@ -22,20 +29,26 @@ const POSSESSIVE_NAME_PATTERN = new RegExp(
 );
 
 const PUBLIC_FIGURES: string[] = [];
+const PUBLIC_FIGURE_PATTERNS: RegExp[] = PUBLIC_FIGURES.map(
+  (name) => new RegExp(`\\b${escapeRegex(name)}\\b`, 'i'),
+);
 
 export function checkRealPersonFilter(prompt: string): boolean {
   if (POSSESSIVE_NAME_PATTERN.test(prompt)) return true;
 
   const normalized = prompt.toLowerCase();
-  return PUBLIC_FIGURES.some((name) => {
-    const pattern = new RegExp(`\\b${escapeRegex(name)}\\b`, 'i');
-    return pattern.test(normalized);
-  });
+  return PUBLIC_FIGURE_PATTERNS.some((pattern) => pattern.test(normalized));
 }
+
+// Pre-lowercase the distress phrase list once at module load so the per-request
+// .some() callback is a pure substring test against a stable array instead of
+// rebuilding lowercased strings on every check. ~30 phrases × every request
+// adds up under load; this trims allocation cost on the hot safety path.
+const DISTRESS_PHRASES_LOWER: string[] = distressPhrases.map((p) => p.toLowerCase());
 
 export function checkDistressPhraseList(prompt: string): boolean {
   const normalized = prompt.toLowerCase();
-  return distressPhrases.some((phrase) => normalized.includes(phrase.toLowerCase()));
+  return DISTRESS_PHRASES_LOWER.some((phrase) => normalized.includes(phrase));
 }
 
 const DISTRESS_CHECK_PROMPT = `You are evaluating a single short text input from a user of a comedy poster generator. The product helps people laugh at bad days. We need to know if the input shows signs that the person is in genuine crisis or expressing intent to harm themselves — in which case the product should NOT generate a poster and should instead show them a support resource.

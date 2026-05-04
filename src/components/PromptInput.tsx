@@ -49,6 +49,11 @@ export function PromptInput({ value, onChange, disabled }: PromptInputProps) {
     }
   }, []);
 
+  // Cancel any pending sessionStorage write on unmount so a stale debounce
+  // doesn't fire after the component is gone (in dev/StrictMode the double-
+  // mount cycle would otherwise dispatch two writes for one keystroke).
+  useEffect(() => () => clearTimeout(debounceRef.current), []);
+
   function handleChange(newValue: string) {
     const cleaned = newValue.replace(/\n/g, '');
     onChange(cleaned);
