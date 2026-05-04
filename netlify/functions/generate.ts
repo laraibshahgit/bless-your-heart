@@ -24,6 +24,16 @@ import {
 // the lambda. Pinned by the `errorCopy parity` block in
 // `tests/server/generate-contract.test.ts`.
 import { errorCopy } from '../../src/content/copy';
+import { validateProdEnv } from '../../src/server/configValidation';
+
+// Production environment validation. Runs once at lambda cold-start. When
+// CONTEXT === 'production' AND a required env var is missing/empty, emits a
+// structured `config_validation_failed` log line with the variable list.
+// Non-fatal by design — see `src/server/configValidation.ts` for rationale
+// (throwing at module load would 502 every user request during the fix
+// window; loud logging gets the same signal to ops without that side-effect).
+// In dev / deploy-preview / branch-deploy this is a no-op.
+validateProdEnv();
 
 // Photo library is currently 10 entries (src/data/photos.json). 50 is generous
 // for any session and bounds attacker-controlled array length — without it,
