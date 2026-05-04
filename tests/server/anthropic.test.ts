@@ -61,10 +61,23 @@ describe('generateLines', () => {
     await generateLines(anthropic, 'my morning routine');
 
     const args = anthropic.messages.create.mock.calls[0][0];
-    expect(args.system).toBe(VOICE_SYSTEM_PROMPT);
+    // System prompt is wrapped in a content-block array so the cache_control
+    // marker can attach to the static voice prefix (see PROMPT_CACHE_CONTROL
+    // in src/server/anthropic.ts). The text content remains unchanged.
+    expect(args.system).toEqual([
+      { type: 'text', text: VOICE_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+    ]);
     expect(args.messages).toEqual([{ role: 'user', content: 'my morning routine' }]);
     expect(args.max_tokens).toBe(200);
     expect(args.temperature).toBe(0.9);
+  });
+
+  it('attaches cache_control to the system prompt for prompt caching', async () => {
+    const anthropic = makeAnthropic({ content: [{ type: 'text', text: '' }] });
+    await generateLines(anthropic, 'work');
+    const sys = anthropic.messages.create.mock.calls[0][0].system;
+    expect(Array.isArray(sys)).toBe(true);
+    expect(sys[0].cache_control).toEqual({ type: 'ephemeral' });
   });
 
   it('filters out non-text blocks', async () => {

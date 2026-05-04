@@ -17,6 +17,15 @@
   to = "/index.html"
   status = 200
 
+# Hero example images are content-versioned via filename suffix
+# (hero-1-540.webp, hero-1-720.webp). They never change at the same URL, so
+# they are safe to cache for a year — keeps repeat-visit bandwidth at zero
+# and lets the Netlify CDN amortize origin pulls across visitors.
+[[headers]]
+  for = "/examples/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 [[headers]]
   for = "/*"
   [headers.values]

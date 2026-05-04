@@ -28,6 +28,19 @@ export const SAFETY_TEMPERATURE = 0;
 // source of truth for the request-level cap.
 export const ANTHROPIC_REQUEST_TIMEOUT_MS = 12_000;
 
+// Prompt caching marker. Anthropic supports caching large, stable prompt
+// prefixes — subsequent requests that reuse the same prefix pay ~10% of the
+// uncached input rate (Sonnet) or ~10% (Haiku) for the cached portion. The
+// generation system prompt is ~1300 tokens, the tone-check prompt ~140, and
+// the distress-check prompt ~250 — all reused on every request. Marking them
+// with `cache_control: { type: 'ephemeral' }` (5-minute TTL) cuts ~70–85% of
+// recurring input cost across the entire pipeline at zero behavioral change.
+// First request after a cold cache pays a 1.25× write surcharge on the cached
+// segment, but breaks even after the second hit and is net-positive at scale.
+// Exported so safety.ts uses the same constant (one place to flip if Anthropic
+// pricing or TTL options change).
+export const PROMPT_CACHE_CONTROL = { type: 'ephemeral' as const };
+
 let client: Anthropic | null = null;
 
 export function getAnthropicClient(): Anthropic {
@@ -93,7 +106,11 @@ export async function generateLines(
       model: process.env.ANTHROPIC_MODEL_GEN ?? 'claude-sonnet-4-6',
       max_tokens: GENERATION_MAX_TOKENS,
       temperature: GENERATION_TEMPERATURE,
-      system: VOICE_SYSTEM_PROMPT,
+      // System prompt is sent as a content-block array (instead of a bare
+      // string) so the cache_control marker can attach to the static voice
+      // prefix. The prompt text itself is unchanged — this is a wire-format
+      // tweak that Anthropic uses to identify the cacheable prefix.
+      system: [{ type: 'text', text: VOICE_SYSTEM_PROMPT, cache_control: PROMPT_CACHE_CONTROL }],
       messages: [{ role: 'user', content: prompt }],
     },
     { timeout: ANTHROPIC_REQUEST_TIMEOUT_MS }
@@ -136,7 +153,7 @@ export async function checkTone(
         model: process.env.ANTHROPIC_MODEL_SAFETY ?? 'claude-haiku-4-5',
         max_tokens: SAFETY_MAX_TOKENS,
         temperature: SAFETY_TEMPERATURE,
-        system: TONE_CHECK_PROMPT,
+        system: [{ type: 'text', text: TONE_CHECK_PROMPT, cache_control: PROMPT_CACHE_CONTROL }],
         messages: [{
           role: 'user',
           content: `User input: "${prompt}"\nGenerated line 2: "${line2}"`,

@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { distressPhrases } from './distress-phrases';
 import { slurList } from './slur-list';
-import { SAFETY_MAX_TOKENS, SAFETY_TEMPERATURE, ANTHROPIC_REQUEST_TIMEOUT_MS } from './anthropic';
+import { SAFETY_MAX_TOKENS, SAFETY_TEMPERATURE, ANTHROPIC_REQUEST_TIMEOUT_MS, PROMPT_CACHE_CONTROL } from './anthropic';
 
 // Precompile slur regexes once at module load. Without this, every request
 // rebuilt the regex array on the hot path — O(n) RegExp constructor calls per
@@ -71,7 +71,11 @@ export async function checkDistressWithHaiku(
         model: process.env.ANTHROPIC_MODEL_SAFETY ?? 'claude-haiku-4-5',
         max_tokens: SAFETY_MAX_TOKENS,
         temperature: SAFETY_TEMPERATURE,
-        system: DISTRESS_CHECK_PROMPT,
+        // Same prompt-caching shape as anthropic.ts — see PROMPT_CACHE_CONTROL
+        // comment there. Distress check fires only when the free phrase list
+        // misses, so the warm-cache hit rate is moderate but the savings on
+        // every Haiku call still amortize positively.
+        system: [{ type: 'text', text: DISTRESS_CHECK_PROMPT, cache_control: PROMPT_CACHE_CONTROL }],
         messages: [{ role: 'user', content: prompt }],
       },
       { timeout: ANTHROPIC_REQUEST_TIMEOUT_MS }
