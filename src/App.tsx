@@ -1,4 +1,4 @@
-import { useState, useCallback, lazy, Suspense } from 'react';
+import { useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { HeroExamples } from '@/components/HeroExamples';
@@ -37,6 +37,34 @@ export default function App() {
   });
   const [loading, setLoading] = useState(false);
 
+  // Concurrency guards for handleGenerate — see audit run 29/001.
+  //
+  // `inFlightRef` is the synchronous mutex that the state-derived `canGenerate`
+  // check is not. `<GenerateButton type="submit">` lives inside a `<form
+  // onSubmit>`: clicking the button fires React's onClick AND the browser's
+  // submit event in the same tick, both invoking handleGenerate. The closure
+  // captures `canGenerate` at render time, so until the next render lands the
+  // freshly-set `loading=true`, both invocations see `canGenerate=true`, both
+  // pass the guard, and both fire `callGenerate` — doubling Anthropic spend
+  // and overwriting state when the responses arrive in arbitrary order. A ref
+  // is the standard React primitive for this: the assignment is synchronous
+  // (unlike `setLoading`), so the second invocation in the same tick sees the
+  // mutated value and bails. Cleared in `finally` so an exception thrown
+  // out of the callGenerate path (or any future code in the handler body)
+  // doesn't permanently jam the button.
+  //
+  // `generationIdRef` is defense in depth for stale-response overwrites. Even
+  // with the in-flight mutex, a future entry path that bypasses the mutex (or
+  // a refactor that reorders the assignment) would still let an older response
+  // overwrite a newer one — the response handler trusts whatever resolves
+  // last. Tagging each fire with an incrementing id and discarding any
+  // response whose id is no longer current is the canonical fix for "old
+  // request finishes after new request" races. Cheap (one ref, two checks),
+  // mirrors the `cancelled`-flag pattern used in PosterCanvas image-load
+  // (audit run 28/001).
+  const inFlightRef = useRef(false);
+  const generationIdRef = useRef(0);
+
   const isGenerating = loading;
   const canGenerate = prompt.trim().length > 0 && !isGenerating;
 
@@ -55,83 +83,109 @@ export default function App() {
   }
 
   const handleGenerate = useCallback(async () => {
+    // Synchronous re-entry guard — see comment on inFlightRef declaration.
+    // Sits BEFORE the canGenerate check because canGenerate is state-derived
+    // and lags by one render behind the in-flight assignment.
+    if (inFlightRef.current) return;
     if (!canGenerate) return;
-    setLoading(true);
-    setInlineError(null);
-    const phrase = pickLoadingPhrase();
-    setPosterState({ phase: 'loading', phrase });
+    inFlightRef.current = true;
+    const myGenerationId = ++generationIdRef.current;
 
-    const source = selectedPreset
-      ? (prompt === selectedPreset ? 'preset' : 'edited_preset')
-      : 'freeform';
-    track('prompt_submitted', { source, length: prompt.length });
+    try {
+      setLoading(true);
+      setInlineError(null);
+      const phrase = pickLoadingPhrase();
+      setPosterState({ phase: 'loading', phrase });
 
-    const startedAt = performance.now();
+      const source = selectedPreset
+        ? (prompt === selectedPreset ? 'preset' : 'edited_preset')
+        : 'freeform';
+      track('prompt_submitted', { source, length: prompt.length });
 
-    const result = await callGenerate(prompt.trim(), excludePhotoIds);
+      const startedAt = performance.now();
 
-    if (result.status === 'distress') {
+      const result = await callGenerate(prompt.trim(), excludePhotoIds);
+
+      // Stale-response guard — if a later generation has been started, drop
+      // this response on the floor. Without it, an old request that arrives
+      // after a new one has been issued would overwrite the newer poster.
+      if (myGenerationId !== generationIdRef.current) return;
+
+      if (result.status === 'distress') {
+        setLoading(false);
+        setPosterState((prev) => prev.phase === 'loading' ? { phase: 'idle' } : prev);
+        track('generation_distress');
+        setDistressData({ open: true, hotline: result.hotline });
+        return;
+      }
+
+      if (result.status === 'blocked') {
+        setLoading(false);
+        setPosterState((prev) => prev.phase === 'loading' ? { phase: 'idle' } : prev);
+        track('generation_blocked', { reason: result.message.includes('people') ? 'real_person' : 'slur' });
+        setInlineError(result.message);
+        return;
+      }
+
+      if (result.status === 'rate_limited') {
+        setLoading(false);
+        setPosterState((prev) => prev.phase === 'loading' ? { phase: 'idle' } : prev);
+        track('generation_rate_limited');
+        setInlineError(result.message);
+        return;
+      }
+
+      const elapsed = performance.now() - startedAt;
+      const remaining = Math.max(0, LOAD_FLOOR_MS - elapsed);
+      if (remaining > 0) await sleep(remaining);
+
+      // Re-check after the LOAD_FLOOR_MS sleep — the user could have
+      // triggered a new generation during the anticipation beat.
+      if (myGenerationId !== generationIdRef.current) return;
+
+      if (result.status === 'ok') {
+        track('generation_completed', { fittingRung: result.fittingRung });
+        // Cap the accumulator at MAX_EXCLUDE_PHOTO_IDS to mirror the server-side
+        // Zod bound. Without the slice, a user who regenerates >50 times would
+        // start hitting 400 responses (the array would outgrow the contract).
+        // Keep the most-recent N entries — matches the "don't repeat the last
+        // few photos" intent and is robust against eventual library growth.
+        setExcludePhotoIds((prev) => [...prev, result.photoId].slice(-MAX_EXCLUDE_PHOTO_IDS));
+        setPosterState({
+          phase: 'settled',
+          line1: result.line1,
+          line2: result.line2,
+          photoId: result.photoId,
+          fittingRung: result.fittingRung,
+        });
+      } else if (result.status === 'safe_fallback') {
+        track('generation_safe_fallback');
+        setPosterState({
+          phase: 'settled',
+          line1: result.line1,
+          line2: result.line2,
+          photoId: result.photoId,
+          fittingRung: 4,
+        });
+      } else if (result.status === 'error') {
+        track('generation_error', { kind: 'unknown' });
+        setPosterState({
+          phase: 'error',
+          message: result.message,
+          retryable: result.retryable,
+        });
+      }
+
       setLoading(false);
-      setPosterState((prev) => prev.phase === 'loading' ? { phase: 'idle' } : prev);
-      track('generation_distress');
-      setDistressData({ open: true, hotline: result.hotline });
-      return;
+    } finally {
+      // Always release the mutex, even if a synchronous throw escaped above.
+      // Without this a thrown exception would permanently jam the button.
+      // Only release if WE own it (stale-response early-returns leave the
+      // mutex held by whoever incremented generationIdRef most recently).
+      if (myGenerationId === generationIdRef.current) {
+        inFlightRef.current = false;
+      }
     }
-
-    if (result.status === 'blocked') {
-      setLoading(false);
-      setPosterState((prev) => prev.phase === 'loading' ? { phase: 'idle' } : prev);
-      track('generation_blocked', { reason: result.message.includes('people') ? 'real_person' : 'slur' });
-      setInlineError(result.message);
-      return;
-    }
-
-    if (result.status === 'rate_limited') {
-      setLoading(false);
-      setPosterState((prev) => prev.phase === 'loading' ? { phase: 'idle' } : prev);
-      track('generation_rate_limited');
-      setInlineError(result.message);
-      return;
-    }
-
-    const elapsed = performance.now() - startedAt;
-    const remaining = Math.max(0, LOAD_FLOOR_MS - elapsed);
-    if (remaining > 0) await sleep(remaining);
-
-    if (result.status === 'ok') {
-      track('generation_completed', { fittingRung: result.fittingRung });
-      // Cap the accumulator at MAX_EXCLUDE_PHOTO_IDS to mirror the server-side
-      // Zod bound. Without the slice, a user who regenerates >50 times would
-      // start hitting 400 responses (the array would outgrow the contract).
-      // Keep the most-recent N entries — matches the "don't repeat the last
-      // few photos" intent and is robust against eventual library growth.
-      setExcludePhotoIds((prev) => [...prev, result.photoId].slice(-MAX_EXCLUDE_PHOTO_IDS));
-      setPosterState({
-        phase: 'settled',
-        line1: result.line1,
-        line2: result.line2,
-        photoId: result.photoId,
-        fittingRung: result.fittingRung,
-      });
-    } else if (result.status === 'safe_fallback') {
-      track('generation_safe_fallback');
-      setPosterState({
-        phase: 'settled',
-        line1: result.line1,
-        line2: result.line2,
-        photoId: result.photoId,
-        fittingRung: 4,
-      });
-    } else if (result.status === 'error') {
-      track('generation_error', { kind: 'unknown' });
-      setPosterState({
-        phase: 'error',
-        message: result.message,
-        retryable: result.retryable,
-      });
-    }
-
-    setLoading(false);
   }, [prompt, excludePhotoIds, canGenerate, selectedPreset]);
 
   function handleRegenerate() {
