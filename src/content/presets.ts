@@ -1,5 +1,5 @@
 export const presets = [
-  'Monday again',
+  'Feeling good',
   'Just got dumped',
   "I'm broke",
   'Ex is engaged',
@@ -10,9 +10,8 @@ export const presets = [
   'Got fired',
   'Anxiety attack',
   'Drank too much last night',
-  'Work meeting',
   'Dating issues',
   'Family dinner',
   'Spiraling',
-  'Feeling good',
+  'Monday again',
 ] as const;
