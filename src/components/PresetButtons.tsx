@@ -9,24 +9,17 @@ interface PresetButtonsProps {
 
 export function PresetButtons({ selected, onSelect, disabled }: PresetButtonsProps) {
   return (
-    <div className="flex gap-2 overflow-x-auto snap-x snap-mandatory py-2 px-1 scrollbar-none max-w-lg mx-auto">
+    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 max-w-lg mx-auto">
       {presets.map((preset) => (
         <Button
           key={preset}
-          // Without `type="button"`, an unset type on a <button> inside a
-          // <form> defaults to `type="submit"` (HTML spec). Clicking a preset
-          // would then fire the form's onSubmit alongside the React onClick,
-          // generating with whichever prompt value was captured in the
-          // handleGenerate closure at click time — i.e. before the preset's
-          // setPrompt landed. Audit run 35/001.
           type="button"
           variant="preset"
-          size="sm"
           disabled={disabled}
           data-selected={selected === preset}
           onClick={() => onSelect(preset)}
           aria-pressed={selected === preset}
-          className="snap-start shrink-0"
+          className="h-auto px-4 py-3 rounded-xl text-body font-semibold whitespace-normal text-center leading-snug shadow-sm"
         >
           {preset}
         </Button>

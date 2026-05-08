@@ -4,7 +4,7 @@
 
 @layer base {
   body {
-    @apply bg-cream text-ink-deep font-serif antialiased;
+    @apply bg-lavender text-ink-deep font-serif antialiased;
   }
 }
 
@@ -25,6 +25,10 @@
     WebKit pseudo-element + zero `scrollbar-width` on Firefox + `-ms-` for
     legacy IE/Edge. Audit run 35/001.
   */
+  .scroll-fade-right {
+    mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
+  }
   .scrollbar-none {
     scrollbar-width: none;
     -ms-overflow-style: none;

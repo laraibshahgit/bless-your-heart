@@ -65,6 +65,7 @@ export default function App() {
   // (audit run 28/001).
   const inFlightRef = useRef(false);
   const generationIdRef = useRef(0);
+  const seenCuratedRef = useRef(new Map<string, number[]>());
 
   const isGenerating = loading;
   const canGenerate = prompt.trim().length > 0 && !isGenerating;
@@ -105,7 +106,9 @@ export default function App() {
 
       const startedAt = performance.now();
 
-      const result = await callGenerate(prompt.trim(), excludePhotoIds);
+      const curatedKey = prompt.trim().toLowerCase();
+      const curatedExcludes = seenCuratedRef.current.get(curatedKey) ?? [];
+      const result = await callGenerate(prompt.trim(), excludePhotoIds, curatedExcludes);
 
       // Stale-response guard — if a later generation has been started, drop
       // this response on the floor. Without it, an old request that arrives
@@ -160,11 +163,10 @@ export default function App() {
 
       if (result.status === 'ok') {
         track('generation_completed', { fittingRung: result.fittingRung });
-        // Cap the accumulator at MAX_EXCLUDE_PHOTO_IDS to mirror the server-side
-        // Zod bound. Without the slice, a user who regenerates >50 times would
-        // start hitting 400 responses (the array would outgrow the contract).
-        // Keep the most-recent N entries — matches the "don't repeat the last
-        // few photos" intent and is robust against eventual library growth.
+        if (result.curatedIndex !== undefined) {
+          const seen = seenCuratedRef.current.get(curatedKey) ?? [];
+          seenCuratedRef.current.set(curatedKey, [...seen, result.curatedIndex]);
+        }
         setExcludePhotoIds((prev) => [...prev, result.photoId].slice(-MAX_EXCLUDE_PHOTO_IDS));
         setPosterState({
           phase: 'settled',
@@ -223,17 +225,31 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-cream flex flex-col">
-      <Header />
+    <div className="bg-lavender flex flex-col">
+      {/* Sky hero section — photo fades into lavender */}
+      <section
+        className="relative bg-cover bg-top"
+        style={{ backgroundImage: "url('/hero-sky.jpg')" }}
+      >
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.12) 35%, rgba(240,237,246,0.15) 58%, rgba(240,237,246,0.7) 80%, #F0EDF6 100%)',
+          }}
+        />
+        <div className="relative z-10">
+          <Header />
+          <div className="text-center px-4 pt-4 pb-16 lg:pb-20 space-y-8 max-w-2xl mx-auto">
+            <h1 className="font-serif text-display lg:text-display-lg italic text-white drop-shadow-[0_2px_16px_rgba(0,0,0,0.6)] [text-shadow:0_2px_16px_rgba(0,0,0,0.6),0_0_50px_rgba(0,0,0,0.3)]">
+              Tell me about your day
+            </h1>
+            <HeroExamples />
+          </div>
+        </div>
+      </section>
 
-      <main className="flex-1 px-4 pb-section">
-        <div className="text-center space-y-breathe max-w-2xl mx-auto">
-          <h1 className="font-serif text-display lg:text-display-lg italic text-ink-deep">
-            What's going on?
-          </h1>
-
-          <HeroExamples />
-
+      <main className="px-4 pt-4 pb-4">
+        <div className="text-center space-y-4 max-w-2xl mx-auto">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -261,11 +277,7 @@ export default function App() {
           </form>
 
           {inlineError && (
-            // role="alert" makes assistive tech announce blocked/rate-limited
-            // messages immediately when they appear. Without it, users who
-            // submitted via screen reader would silently see no feedback —
-            // the form just stops responding. Audit run 34/001.
-            <p role="alert" className="text-caption text-feedback-quiet italic">{inlineError}</p>
+            <p role="alert" className="text-caption text-ink-faint italic">{inlineError}</p>
           )}
         </div>
 

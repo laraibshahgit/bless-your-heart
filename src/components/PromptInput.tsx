@@ -9,9 +9,6 @@ interface PromptInputProps {
 }
 
 const SESSION_KEY = 'byh:lastPrompt';
-// Show character counter only as the user nears the limit — keep the UI calm
-// for 90% of the typing experience.
-const COUNTER_VISIBLE_THRESHOLD = Math.floor(MAX_PROMPT_LENGTH * 0.9);
 
 // sessionStorage can throw in third-party iframe / cookie-blocked / quota-full
 // contexts. Treat persistence as best-effort: a failure must never bubble up
@@ -63,11 +60,11 @@ export function PromptInput({ value, onChange, disabled }: PromptInputProps) {
     }, 300);
   }
 
-  const showCounter = value.length >= COUNTER_VISIBLE_THRESHOLD;
+  const showCounter = value.length > 0;
 
   return (
     <div className="relative w-full max-w-lg mx-auto">
-      <label htmlFor="prompt-input" className="sr-only">What's going on?</label>
+      <label htmlFor="prompt-input" className="sr-only">Tell me about your day</label>
       <input
         ref={inputRef}
         id="prompt-input"
@@ -79,10 +76,10 @@ export function PromptInput({ value, onChange, disabled }: PromptInputProps) {
         autoComplete="off"
         spellCheck={false}
         disabled={disabled}
-        className="w-full bg-paper text-ink-deep placeholder:text-ink-faint placeholder:italic font-serif text-body-lg px-5 py-4 rounded-xl border-0 focus:outline-none focus:ring-2 focus:ring-accent-sage/50 transition-shadow"
+        className="w-full bg-white text-ink-deep font-medium placeholder:text-ink-soft placeholder:italic placeholder:font-medium font-serif text-body-lg px-5 py-4 rounded-xl border-2 border-[#D4CFDF] shadow-md focus:outline-none focus:ring-2 focus:ring-accent-sage/50 focus:border-accent-sage/40 transition-shadow"
       />
       {showCounter && (
-        <span className="absolute right-4 bottom-2 text-caption text-feedback-quiet">
+        <span className="absolute right-4 bottom-2 text-caption text-ink-faint">
           {value.length} / {MAX_PROMPT_LENGTH}
         </span>
       )}

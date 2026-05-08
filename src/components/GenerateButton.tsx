@@ -26,7 +26,7 @@ export function GenerateButton({ loading, disabled, onClick }: GenerateButtonPro
       onClick={onClick}
       aria-label={loading ? 'Generating' : undefined}
       aria-busy={loading || undefined}
-      className="min-w-[160px]"
+      className="min-w-[200px] h-14 text-body-lg font-bold tracking-wide [color:#000000] disabled:opacity-70"
     >
       {loading ? null : <Sparkles className="w-4 h-4" aria-hidden="true" />}
       {loading ? '' : 'Generate'}

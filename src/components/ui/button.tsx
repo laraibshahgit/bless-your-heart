@@ -5,13 +5,13 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/cn"
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap font-serif text-label font-medium transition-all duration-150 ease-touch focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-sage/50 focus-visible:ring-offset-2 focus-visible:ring-offset-cream disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap font-serif text-label font-medium transition-all duration-150 ease-touch focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-sage/50 focus-visible:ring-offset-2 focus-visible:ring-offset-lavender disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
-        primary: 'bg-accent-sage text-cream shadow-sm hover:bg-accent-sage-deep active:scale-[0.98]',
-        secondary: 'bg-paper text-ink-deep border border-border-mist hover:border-accent-sage active:scale-[0.98]',
-        preset: 'bg-paper text-ink-soft border border-border-mist hover:border-accent-sage data-[selected=true]:border-accent-sage data-[selected=true]:text-ink-deep',
+        primary: 'bg-[#D4960D] text-black shadow-[0_4px_20px_rgba(212,150,13,0.45)] hover:bg-[#C08A0C] active:scale-[0.98]',
+        secondary: 'bg-white text-ink-deep border border-border-mist hover:border-accent-sage active:scale-[0.98]',
+        preset: 'bg-white text-[#4A4458] border border-[#D4CFDF] hover:border-accent-sage data-[selected=true]:border-accent-sage data-[selected=true]:text-ink-deep',
         ghost: 'text-ink-soft hover:text-accent-sage',
       },
       size: {

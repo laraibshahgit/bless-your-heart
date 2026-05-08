@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lower Section Color Options — Bless Your Heart</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    background: #2a2622;
+    padding: 24px;
+  }
+  h2 {
+    text-align: center;
+    color: #fff;
+    font-size: 1.4rem;
+    font-weight: 500;
+    margin: 40px 0 16px;
+    font-style: italic;
+  }
+  h2:first-of-type { margin-top: 0; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 28px;
+    max-width: 1800px;
+    margin: 0 auto;
+  }
+
+  .card {
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 6px 30px rgba(0,0,0,0.4);
+  }
+  .card-label {
+    text-align: center;
+    color: #C8C0B0;
+    font-size: 0.9rem;
+    margin-top: 8px;
+    font-style: italic;
+  }
+
+  /* Sky header — shared across all cards */
+  .sky {
+    position: relative;
+    background-image: url('/hero-sky.jpg');
+    background-size: cover;
+    background-position: top center;
+    min-height: 200px;
+    text-align: center;
+    overflow: hidden;
+  }
+  .sky .overlay {
+    position: absolute;
+    inset: 0;
+  }
+  .sky .content {
+    position: relative;
+    z-index: 2;
+    padding: 18px 20px 40px;
+  }
+  .sky .brand {
+    font-size: 1.4rem;
+    font-weight: 600;
+    font-style: italic;
+    color: #fff;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.6), 0 0px 40px rgba(0,0,0,0.3);
+    margin-bottom: 6px;
+  }
+  .sky .title {
+    font-size: 2.2rem;
+    font-weight: 500;
+    font-style: italic;
+    color: #fff;
+    text-shadow: 0 2px 16px rgba(0,0,0,0.6), 0 0px 50px rgba(0,0,0,0.3);
+    margin-bottom: 16px;
+  }
+  .sky .heroes {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+  }
+  .sky .hero-img {
+    width: 115px;
+    height: 115px;
+    border-radius: 12px;
+    background-size: cover;
+    background-position: center;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.3);
+  }
+
+  /* Form area — color varies per card */
+  .form-area {
+    padding: 14px 24px 20px;
+    text-align: center;
+  }
+  .input-mock {
+    width: 100%;
+    max-width: 340px;
+    margin: 0 auto 10px;
+    display: block;
+    background: #fff;
+    border: 2px solid;
+    border-radius: 12px;
+    padding: 13px 16px;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 1.05rem;
+    font-style: italic;
+    font-weight: 500;
+    text-align: left;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    justify-content: center;
+    margin-bottom: 14px;
+    max-width: 370px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .preset {
+    padding: 7px 13px;
+    border-radius: 12px;
+    font-size: 0.84rem;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-weight: 600;
+    background: #fff;
+    border: 1.5px solid;
+    cursor: default;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .gen-btn {
+    display: block;
+    margin: 0 auto;
+    border: none;
+    border-radius: 50px;
+    padding: 14px 52px;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    cursor: default;
+  }
+  .footer-mock {
+    margin-top: 16px;
+    padding-top: 12px;
+    font-size: 0.78rem;
+    font-style: italic;
+    line-height: 1.6;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<h2>Pick a lower-section color (all have the fixed text visibility)</h2>
+
+<div class="grid" id="grid"></div>
+
+<script>
+const options = [
+  {
+    name: '1. Current Cream',
+    bg: '#F7F3EC',
+    text: '#2A2622',
+    textSoft: '#5C5650',
+    textFaint: '#9A938B',
+    border: '#E5DFD4',
+    placeholder: '#5C5650',
+    btnBg: '#E8B830',
+    btnText: '#2A2622',
+    linkColor: '#8B9D83',
+    overlayEnd: 'rgba(247,243,236,',
+    overlayHex: '#F7F3EC',
+  },
+  {
+    name: '2. Warm Sand',
+    bg: '#F0E8DA',
+    text: '#2A2622',
+    textSoft: '#5C5650',
+    textFaint: '#8A8278',
+    border: '#D9CEBC',
+    placeholder: '#5C5650',
+    btnBg: '#E8B830',
+    btnText: '#2A2622',
+    linkColor: '#8B9D83',
+    overlayEnd: 'rgba(240,232,218,',
+    overlayHex: '#F0E8DA',
+  },
+  {
+    name: '3. Soft White',
+    bg: '#FAFAFA',
+    text: '#2A2622',
+    textSoft: '#5C5650',
+    textFaint: '#9A938B',
+    border: '#E0E0E0',
+    placeholder: '#5C5650',
+    btnBg: '#E8B830',
+    btnText: '#2A2622',
+    linkColor: '#8B9D83',
+    overlayEnd: 'rgba(250,250,250,',
+    overlayHex: '#FAFAFA',
+  },
+  {
+    name: '4. Sky Mist',
+    bg: '#EDF2F8',
+    text: '#2A2622',
+    textSoft: '#4A5568',
+    textFaint: '#8A93A0',
+    border: '#D0DAE4',
+    placeholder: '#4A5568',
+    btnBg: '#E8B830',
+    btnText: '#2A2622',
+    linkColor: '#5A8A6E',
+    overlayEnd: 'rgba(237,242,248,',
+    overlayHex: '#EDF2F8',
+  },
+  {
+    name: '5. Cloud Sage',
+    bg: '#EEF3EC',
+    text: '#2A2622',
+    textSoft: '#4A5648',
+    textFaint: '#7D8A7A',
+    border: '#D0DCCC',
+    placeholder: '#4A5648',
+    btnBg: '#E8B830',
+    btnText: '#2A2622',
+    linkColor: '#6B8B63',
+    overlayEnd: 'rgba(238,243,236,',
+    overlayHex: '#EEF3EC',
+  },
+  {
+    name: '6. Warm Blush',
+    bg: '#F8F0EE',
+    text: '#2A2622',
+    textSoft: '#5C5650',
+    textFaint: '#9A8E88',
+    border: '#E4D8D4',
+    placeholder: '#5C5650',
+    btnBg: '#E8B830',
+    btnText: '#2A2622',
+    linkColor: '#B47855',
+    overlayEnd: 'rgba(248,240,238,',
+    overlayHex: '#F8F0EE',
+  },
+  {
+    name: '7. Honey Glow',
+    bg: '#F6F0E0',
+    text: '#2A2622',
+    textSoft: '#5C5650',
+    textFaint: '#8A8070',
+    border: '#DED4BC',
+    placeholder: '#5C5650',
+    btnBg: '#D4960D',
+    btnText: '#fff',
+    linkColor: '#A08030',
+    overlayEnd: 'rgba(246,240,224,',
+    overlayHex: '#F6F0E0',
+  },
+  {
+    name: '8. Lavender Haze',
+    bg: '#F0EDF6',
+    text: '#2A2622',
+    textSoft: '#4A4458',
+    textFaint: '#8A85A0',
+    border: '#D4CFDF',
+    placeholder: '#4A4458',
+    btnBg: '#E8B830',
+    btnText: '#2A2622',
+    linkColor: '#8B6DB0',
+    overlayEnd: 'rgba(240,237,246,',
+    overlayHex: '#F0EDF6',
+  },
+];
+
+const grid = document.getElementById('grid');
+
+options.forEach(opt => {
+  const wrapper = document.createElement('div');
+
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  // Sky section
+  const sky = document.createElement('div');
+  sky.className = 'sky';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.style.background = `linear-gradient(to bottom, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.12) 35%, ${opt.overlayEnd}0.15) 58%, ${opt.overlayEnd}0.7) 80%, ${opt.overlayHex} 100%)`;
+
+  const content = document.createElement('div');
+  content.className = 'content';
+  content.innerHTML = `
+    <div class="brand">Bless Your Heart</div>
+    <div class="title">Tell me about your day</div>
+    <div class="heroes">
+      <div class="hero-img" style="background-image: url('/examples/hero-1-540.webp')"></div>
+      <div class="hero-img" style="background-image: url('/examples/hero-2-540.webp')"></div>
+      <div class="hero-img" style="background-image: url('/examples/hero-3-540.webp')"></div>
+    </div>
+  `;
+
+  sky.appendChild(overlay);
+  sky.appendChild(content);
+  card.appendChild(sky);
+
+  // Form section
+  const form = document.createElement('div');
+  form.className = 'form-area';
+  form.style.background = opt.bg;
+
+  form.innerHTML = `
+    <div class="input-mock" style="color: ${opt.placeholder}; border-color: ${opt.border};">What other bullshit is going on?</div>
+    <div class="presets">
+      <span class="preset" style="color: ${opt.textSoft}; border-color: ${opt.border};">Just got dumped</span>
+      <span class="preset" style="color: ${opt.textSoft}; border-color: ${opt.border};">Monday again</span>
+      <span class="preset" style="color: ${opt.textSoft}; border-color: ${opt.border};">Can't sleep</span>
+      <span class="preset" style="color: ${opt.textSoft}; border-color: ${opt.border};">Got left on read</span>
+    </div>
+    <div class="gen-btn" style="background: ${opt.btnBg}; color: ${opt.btnText}; box-shadow: 0 4px 18px ${opt.btnBg}44;">&#10024; Generate</div>
+    <div class="footer-mock" style="color: ${opt.textFaint}; border-top: 1px solid ${opt.border};">
+      Bless Your Heart &middot; made with affection and resignation<br>
+      A comedy product, not therapy. <span style="color: ${opt.linkColor};">988</span> &middot; <span style="color: ${opt.linkColor};">findahelpline.com</span>
+    </div>
+  `;
+
+  card.appendChild(form);
+  wrapper.appendChild(card);
+
+  const label = document.createElement('div');
+  label.className = 'card-label';
+  label.textContent = opt.name;
+  wrapper.appendChild(label);
+
+  grid.appendChild(wrapper);
+});
+</script>
+
+</body>
+</html>
