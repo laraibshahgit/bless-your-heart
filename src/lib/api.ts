@@ -12,13 +12,14 @@ const GENERATE_FETCH_TIMEOUT_MS = 30_000;
 
 export async function callGenerate(
   prompt: string,
-  excludePhotoIds: string[]
+  excludePhotoIds: string[],
+  excludeCuratedIndices: number[] = []
 ): Promise<GenerateResponse> {
   try {
     const response = await fetch('/.netlify/functions/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, excludePhotoIds } satisfies GenerateRequest),
+      body: JSON.stringify({ prompt, excludePhotoIds, excludeCuratedIndices } satisfies GenerateRequest),
       signal: AbortSignal.timeout(GENERATE_FETCH_TIMEOUT_MS),
     });
 

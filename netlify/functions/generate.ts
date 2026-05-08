@@ -7,6 +7,7 @@ import { parseGenerationOutput, checkSpecificity } from '../../src/server/valida
 import { selectPhoto } from '../../src/server/photoSelection';
 import { getHotlineForCountry } from '../../src/server/hotlines';
 import { safeFallbacks } from '../../src/server/fallbacks';
+import { getCuratedOutput } from '../../src/server/curated-outputs';
 import photos from '../../src/data/photos.json';
 import {
   MAX_PROMPT_LENGTH,
@@ -47,11 +48,17 @@ validateProdEnv();
 // Zod work even though every element is trivially out-of-library on the
 // downstream filter. Both bounds live in `src/types/index.ts` so the client
 // `App.tsx` accumulator stays aligned with the server contract.
+const MAX_CURATED_INDICES = 4;
+
 const RequestSchema = z.object({
   prompt: z.string().trim().min(1).max(MAX_PROMPT_LENGTH),
   excludePhotoIds: z
     .array(z.string().min(1).max(MAX_EXCLUDE_PHOTO_ID_LENGTH))
     .max(MAX_EXCLUDE_PHOTO_IDS)
+    .default([]),
+  excludeCuratedIndices: z
+    .array(z.number().int().min(0).max(3))
+    .max(MAX_CURATED_INDICES)
     .default([]),
 });
 
@@ -200,7 +207,7 @@ const handler: Handler = async (event: HandlerEvent) => {
     }
 
     const prompt = normalizePrompt(parsed.prompt);
-    const { excludePhotoIds } = parsed;
+    const { excludePhotoIds, excludeCuratedIndices } = parsed;
 
     const rawIp = getClientIp(event.headers);
     const hashedIp = hashIp(rawIp);
@@ -282,6 +289,37 @@ const handler: Handler = async (event: HandlerEvent) => {
         200,
         successRateHeaders
       );
+    }
+
+    const curated = getCuratedOutput(prompt, excludeCuratedIndices);
+    if (curated) {
+      const photoResult = selectPhoto(
+        typedPhotos,
+        curated.line1.length,
+        curated.line2.length,
+        excludePhotoIds
+      );
+      if (photoResult) {
+        logEvent('gen_ok', {
+          curated: true,
+          curatedIndex: curated.index,
+          fittingRung: photoResult.rung,
+          retries: 0,
+          duration_ms: 0,
+        });
+        return jsonResponse(
+          {
+            status: 'ok',
+            line1: curated.line1,
+            line2: curated.line2,
+            photoId: photoResult.photoId,
+            fittingRung: photoResult.rung,
+            curatedIndex: curated.index,
+          },
+          200,
+          successRateHeaders
+        );
+      }
     }
 
     let lastOutput = null;

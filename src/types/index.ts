@@ -66,6 +66,7 @@ export interface GenerateRequest {
   // Pinned by `accepts a request omitting excludePhotoIds` in
   // `tests/server/generate-contract.test.ts`.
   excludePhotoIds?: string[];
+  excludeCuratedIndices?: number[];
 }
 
 export interface Hotline {
@@ -76,7 +77,7 @@ export interface Hotline {
 }
 
 export type GenerateResponse =
-  | { status: 'ok'; line1: string; line2: string; photoId: string; fittingRung: 1 | 2 | 3 | 4 }
+  | { status: 'ok'; line1: string; line2: string; photoId: string; fittingRung: 1 | 2 | 3 | 4; curatedIndex?: number }
   | { status: 'distress'; hotline: Hotline }
   | { status: 'blocked'; message: string }
   | { status: 'rate_limited'; message: string; retryAfterSec?: number; resetAt?: number }

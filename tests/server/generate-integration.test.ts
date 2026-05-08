@@ -201,9 +201,9 @@ describe('generate endpoint — happy path', () => {
   it('respects excludePhotoIds (returns a different photo on regenerate)', async () => {
     // First call
     mockHaikuReply('ok');
-    mockSonnetReply('The world keeps going regardless.', "And it's not even checking on you.");
+    mockSonnetReply('Every thought deserves space.', 'Your random tuesday thought at 3 AM was not a revelation.');
     const first = await callHandler({
-      prompt: 'monday again',
+      prompt: 'random tuesday thought',
       excludePhotoIds: [],
     });
     const firstBody = JSON.parse((first as any).body);
@@ -211,11 +211,11 @@ describe('generate endpoint — happy path', () => {
     // Second call - exclude the first photo
     mockHaikuReply('ok');
     mockSonnetReply(
-      'The week holds many small mercies.',
-      'Monday is not currently among them.'
+      'A fresh thought emerges.',
+      'Tuesday has thoughts about you too. None of them are kind.'
     );
     const second = await callHandler({
-      prompt: 'monday again',
+      prompt: 'random tuesday thought',
       excludePhotoIds: [firstBody.photoId],
     });
     const secondBody = JSON.parse((second as any).body);
@@ -235,7 +235,7 @@ describe('generate endpoint — retry + fallback', () => {
     anthropicCreate.mockResolvedValueOnce({ content: [{ type: 'text', text: 'nope' }] });
 
     const result = await callHandler({
-      prompt: 'monday again',
+      prompt: 'dreading this week already',
       excludePhotoIds: [],
     });
     const body = JSON.parse((result as any).body);
@@ -267,7 +267,7 @@ describe('generate endpoint — retry + fallback', () => {
     anthropicCreate.mockRejectedValueOnce(new Error('boom'));
 
     const result = await callHandler({
-      prompt: 'monday again',
+      prompt: 'dreading this week already',
       excludePhotoIds: [],
     });
     const body = JSON.parse((result as any).body);
@@ -311,7 +311,7 @@ describe('generate endpoint — Anthropic error type discrimination (audit 33/00
     anthropicCreate.mockRejectedValueOnce(apiError(401, 'Unauthorized'));
 
     const result = await callHandler({
-      prompt: 'monday again',
+      prompt: 'random tuesday thought',
       excludePhotoIds: [],
     });
     const body = JSON.parse((result as any).body);
@@ -340,7 +340,7 @@ describe('generate endpoint — Anthropic error type discrimination (audit 33/00
     anthropicCreate.mockRejectedValueOnce(apiError(429, 'rate_limit_error'));
 
     const result = await callHandler({
-      prompt: 'monday again',
+      prompt: 'dreading this week already',
       excludePhotoIds: [],
     });
     const body = JSON.parse((result as any).body);

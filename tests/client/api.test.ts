@@ -42,7 +42,7 @@ describe('callGenerate', () => {
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: 'my career', excludePhotoIds: [] }),
+        body: JSON.stringify({ prompt: 'my career', excludePhotoIds: [], excludeCuratedIndices: [] }),
       })
     );
     expect(result).toEqual(mockBody);
@@ -165,7 +165,7 @@ describe('callGenerate', () => {
     expect(fetch).toHaveBeenCalledWith(
       '/.netlify/functions/generate',
       expect.objectContaining({
-        body: JSON.stringify({ prompt: 'test', excludePhotoIds: ['id-1', 'id-2'] }),
+        body: JSON.stringify({ prompt: 'test', excludePhotoIds: ['id-1', 'id-2'], excludeCuratedIndices: [] }),
       })
     );
   });
