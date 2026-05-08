@@ -25,28 +25,34 @@ function makePhoto(overrides: Partial<Photo> = {}): Photo {
 
 interface Calls {
   fillText: Array<[string, number, number]>;
+  fillRect: Array<[number, number, number, number]>;
   drawImage: Array<unknown[]>;
   measureText: Array<string>;
   setTransform: Array<unknown[]>;
   scale: Array<unknown[]>;
   clearRect: Array<unknown[]>;
+  createLinearGradientArgs: Array<[number, number, number, number]>;
   saveCount: number;
   restoreCount: number;
   fontValues: string[];
-  fillStyleValues: string[];
+  fillStyleValues: Array<string | object>;
   textAlignValues: string[];
   textBaselineValues: string[];
   globalAlphaValues: number[];
+  shadowColorValues: string[];
+  shadowBlurValues: number[];
 }
 
 function createMockContext(textWidth = 100): { ctx: any; calls: Calls } {
   const calls: Calls = {
     fillText: [],
+    fillRect: [],
     drawImage: [],
     measureText: [],
     setTransform: [],
     scale: [],
     clearRect: [],
+    createLinearGradientArgs: [],
     saveCount: 0,
     restoreCount: 0,
     fontValues: [],
@@ -54,7 +60,11 @@ function createMockContext(textWidth = 100): { ctx: any; calls: Calls } {
     textAlignValues: [],
     textBaselineValues: [],
     globalAlphaValues: [],
+    shadowColorValues: [],
+    shadowBlurValues: [],
   };
+
+  const gradientStub = { addColorStop: vi.fn() };
 
   const ctx: any = {
     save: () => {
@@ -68,6 +78,14 @@ function createMockContext(textWidth = 100): { ctx: any; calls: Calls } {
     clearRect: (...args: unknown[]) => calls.clearRect.push(args),
     drawImage: (...args: unknown[]) => calls.drawImage.push(args),
     fillText: (text: string, x: number, y: number) => calls.fillText.push([text, x, y]),
+    strokeText: vi.fn(),
+    fillRect: (x: number, y: number, w: number, h: number) => calls.fillRect.push([x, y, w, h]),
+    lineWidth: 0,
+    strokeStyle: '',
+    createLinearGradient: (x0: number, y0: number, x1: number, y1: number) => {
+      calls.createLinearGradientArgs.push([x0, y0, x1, y1]);
+      return gradientStub;
+    },
     measureText: (text: string) => {
       calls.measureText.push(text);
       return { width: textWidth };
@@ -75,10 +93,14 @@ function createMockContext(textWidth = 100): { ctx: any; calls: Calls } {
     imageSmoothingEnabled: true,
     imageSmoothingQuality: 'high',
     letterSpacing: '0em',
+    shadowColor: '',
+    shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
     set font(v: string) {
       calls.fontValues.push(v);
     },
-    set fillStyle(v: string) {
+    set fillStyle(v: string | object) {
       calls.fillStyleValues.push(v);
     },
     set textAlign(v: string) {
@@ -91,6 +113,15 @@ function createMockContext(textWidth = 100): { ctx: any; calls: Calls } {
       calls.globalAlphaValues.push(v);
     },
   };
+
+  Object.defineProperty(ctx, 'shadowColor', {
+    set(v: string) { calls.shadowColorValues.push(v); },
+    get() { return calls.shadowColorValues[calls.shadowColorValues.length - 1] ?? ''; },
+  });
+  Object.defineProperty(ctx, 'shadowBlur', {
+    set(v: number) { calls.shadowBlurValues.push(v); },
+    get() { return calls.shadowBlurValues[calls.shadowBlurValues.length - 1] ?? 0; },
+  });
 
   return { ctx, calls };
 }
@@ -277,7 +308,9 @@ describe('composite', () => {
       line2: 'b',
     });
     expect(calls.fontValues[0]).toContain('64px');
+    expect(calls.fontValues[0]).toContain('700');
     expect(calls.fontValues[1]).toContain('44px');
+    expect(calls.fontValues[1]).toContain('600');
   });
 
   it('centers text horizontally on the textZone center', () => {
@@ -301,6 +334,38 @@ describe('composite', () => {
       line2: 'b',
     });
     expect(calls.globalAlphaValues).toEqual([0.85, 1.0]);
+  });
+
+  it('draws a dark gradient overlay across the bottom portion before text', () => {
+    const { ctx, calls } = createMockContext();
+    const canvas = makeCanvas(ctx);
+    composite({
+      canvas,
+      img: {} as HTMLImageElement,
+      photo: makePhoto(),
+      line1: 'a',
+      line2: 'b',
+    });
+    expect(calls.createLinearGradientArgs).toHaveLength(1);
+    expect(calls.createLinearGradientArgs[0]).toEqual([0, 162, 0, 1080]);
+    expect(calls.fillRect).toHaveLength(1);
+    expect(calls.fillRect[0]).toEqual([0, 162, 1080, 918]);
+  });
+
+  it('sets text shadow before line text and clears it before watermark', () => {
+    const { ctx, calls } = createMockContext();
+    const canvas = makeCanvas(ctx);
+    composite({
+      canvas,
+      img: {} as HTMLImageElement,
+      photo: makePhoto(),
+      line1: 'a',
+      line2: 'b',
+    });
+    expect(calls.shadowColorValues[0]).toBe('rgba(0, 0, 0, 0.35)');
+    expect(calls.shadowBlurValues[0]).toBe(4);
+    expect(calls.shadowColorValues).toContain('transparent');
+    expect(calls.shadowBlurValues).toContain(0);
   });
 });
 
@@ -327,7 +392,7 @@ describe('checkFit', () => {
     }
   });
 
-  it('returns scale < 1 when one line slightly overflows but stays above 0.6', async () => {
+  it('returns scale < 1 when one line slightly overflows but stays above MIN_FIT_SCALE', async () => {
     // textZone.width 0.8 * 1080 = 864 - 2*24 = 816 usable. Force measureText = 1000 -> scale ~0.816
     const { ctx } = createMockContext(1000);
     vi.spyOn(document, 'createElement').mockReturnValue({
@@ -338,12 +403,12 @@ describe('checkFit', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.scale).toBeLessThan(1);
-      expect(result.scale).toBeGreaterThanOrEqual(0.6);
+      expect(result.scale).toBeGreaterThanOrEqual(0.5);
     }
   });
 
-  it('returns overflow when shrink would go below 0.6', async () => {
-    // measureText way too wide -> scale below 0.6
+  it('returns overflow when shrink would go below MIN_FIT_SCALE (0.5)', async () => {
+    // measureText way too wide -> scale below 0.5
     const { ctx } = createMockContext(10_000);
     vi.spyOn(document, 'createElement').mockReturnValue({
       getContext: () => ctx,

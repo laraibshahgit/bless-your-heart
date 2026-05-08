@@ -3,6 +3,7 @@ import { PosterCanvas } from './PosterCanvas';
 import { DownloadButton } from './DownloadButton';
 import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
+import { loadingPhrases } from '@/content/copy';
 import type { PosterPhase } from '@/types';
 
 interface PosterRevealProps {
@@ -17,6 +18,24 @@ interface PosterRevealProps {
 export function PosterReveal({ state, onRegenerate, onCanvasFailure }: PosterRevealProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [canvasReady, setCanvasReady] = useState(false);
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    if (state.phase !== 'loading') return;
+    setPhraseIndex(0);
+    setDots('');
+    const phraseInterval = setInterval(() => {
+      setPhraseIndex((i) => (i + 1) % loadingPhrases.length);
+    }, 2500);
+    const dotInterval = setInterval(() => {
+      setDots((d) => (d.length >= 3 ? '' : d + '.'));
+    }, 500);
+    return () => {
+      clearInterval(phraseInterval);
+      clearInterval(dotInterval);
+    };
+  }, [state.phase]);
 
   // Reset canvasReady when leaving `settled`. Without this, regenerating from a
   // settled poster leaves canvasReady=true across the brief loading phase, and
@@ -59,13 +78,14 @@ export function PosterReveal({ state, onRegenerate, onCanvasFailure }: PosterRev
             silent for non-sighted users — they hear nothing between clicking
             Generate and the canvas being announced. Audit run 34/001.
           */}
-          <p
-            role="status"
-            aria-live="polite"
-            className="font-serif italic text-body-lg text-ink-soft animate-pulse-opacity px-4"
-          >
-            {state.phrase}
-          </p>
+          <div role="status" aria-live="polite" className="px-4">
+            <p className="font-serif italic text-body-lg text-ink-soft animate-pulse-opacity">
+              {loadingPhrases[phraseIndex]}
+            </p>
+            <p className="font-serif text-body text-ink-faint mt-2 tracking-widest" aria-hidden="true">
+              {dots || ' '}
+            </p>
+          </div>
         </div>
       )}
 
@@ -96,7 +116,7 @@ export function PosterReveal({ state, onRegenerate, onCanvasFailure }: PosterRev
             and read the error). Mirrors the loading branch above. Audit
             run 34/001.
           */}
-          <p role="alert" className="font-serif italic text-body text-feedback-quiet">
+          <p role="alert" className="font-serif italic text-body text-ink-soft">
             {state.message}
           </p>
           {state.retryable && (

@@ -45,10 +45,11 @@ export const LETTER_SPACING_WATERMARK = '0.04em';
 export const WATERMARK_OPACITY = 0.85;
 
 // checkFit() returns overflow when both lines would need to shrink below this
-// fraction of base size to fit the text zone. Below ~0.6 the typography stops
-// reading as the same poster — a different photo from the high-capacity rung
-// is preferred over a too-shrunk render.
-export const MIN_FIT_SCALE = 0.6;
+// fraction of base size to fit the text zone. At 0.5 the text remains legible
+// on the 1080px canvas (line1 ≥ 32px, line2 ≥ 22px) while accommodating
+// wide character combinations (uppercase runs, M/W sequences) that the
+// server's character-count validation allows but that exceed pixel budgets.
+export const MIN_FIT_SCALE = 0.5;
 
 // Watermark text. Defined here so a brand rename touches one constant rather
 // than one string literal in compositor.ts; pinned by compositor tests.
