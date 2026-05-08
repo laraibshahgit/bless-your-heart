@@ -109,9 +109,7 @@ export interface GenerationOutput {
   line2: string;
 }
 
-export type FitResult =
-  | { ok: true; scale: number }
-  | { ok: false; reason: 'overflow' };
+export type FitResult = { ok: true; scale: number };
 
 // ── UI State ──
 

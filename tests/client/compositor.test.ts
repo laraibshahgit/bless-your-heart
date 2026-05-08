@@ -407,18 +407,17 @@ describe('checkFit', () => {
     }
   });
 
-  it('returns overflow when shrink would go below MIN_FIT_SCALE (0.5)', async () => {
-    // measureText way too wide -> scale below 0.5
+  it('returns ok with small scale when text is very wide (no rejection)', async () => {
+    // measureText way too wide -> scale well below 0.5, but still renders
     const { ctx } = createMockContext(10_000);
     vi.spyOn(document, 'createElement').mockReturnValue({
       getContext: () => ctx,
     } as unknown as HTMLCanvasElement);
 
     const result = await checkFit('massively long line one', 'massively long line two', makePhoto());
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toBe('overflow');
-    }
+    expect(result.ok).toBe(true);
+    expect(result.scale).toBeLessThan(0.5);
+    expect(result.scale).toBeCloseTo(816 / 10_000, 4);
   });
 
   it('throws a descriptive error when getContext returns null', async () => {

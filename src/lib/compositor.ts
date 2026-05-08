@@ -13,7 +13,6 @@ import {
   LETTER_SPACING_LINE2,
   LETTER_SPACING_WATERMARK,
   WATERMARK_OPACITY,
-  MIN_FIT_SCALE,
   WATERMARK_TEXT,
 } from './poster-layout';
 
@@ -116,8 +115,20 @@ export function composite({ canvas, img, photo, line1, line2, scale = 1 }: Compo
 
   ctx.drawImage(img, 0, 0, POSTER_LOGICAL_SIZE_PX, POSTER_LOGICAL_SIZE_PX);
 
+  const gradient = ctx.createLinearGradient(0, POSTER_LOGICAL_SIZE_PX * 0.15, 0, POSTER_LOGICAL_SIZE_PX);
+  gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  gradient.addColorStop(0.4, 'rgba(0, 0, 0, 0.55)');
+  gradient.addColorStop(1, 'rgba(0, 0, 0, 0.92)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, POSTER_LOGICAL_SIZE_PX * 0.15, POSTER_LOGICAL_SIZE_PX, POSTER_LOGICAL_SIZE_PX * 0.85);
+
   const fillColor = photo.textColor === 'white' ? '#FFFFFF' : '#1A1612';
-  ctx.fillStyle = fillColor;
+  const strokeColor = photo.textColor === 'white' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.7)';
+
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 1;
 
   const zoneX = photo.textZone.x * POSTER_LOGICAL_SIZE_PX;
   const zoneY = photo.textZone.y * POSTER_LOGICAL_SIZE_PX;
@@ -125,18 +136,30 @@ export function composite({ canvas, img, photo, line1, line2, scale = 1 }: Compo
   const centerX = zoneX + zoneW / 2;
 
   const line1Size = Math.round(LINE1_FONT_PX * scale);
-  ctx.font = `500 ${line1Size}px "Cormorant Garamond"`;
+  ctx.font = `700 ${line1Size}px "Cormorant Garamond"`;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'center';
   setLetterSpacing(ctx, LETTER_SPACING_LINE1);
   const line1Y = zoneY + TEXT_ZONE_PADDING_PX;
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = strokeColor;
+  ctx.strokeText(line1, centerX, line1Y);
+  ctx.fillStyle = fillColor;
   ctx.fillText(line1, centerX, line1Y);
 
   const line2Size = Math.round(LINE2_FONT_PX * scale);
-  ctx.font = `italic 400 ${line2Size}px "Cormorant Garamond"`;
+  ctx.font = `italic 600 ${line2Size}px "Cormorant Garamond"`;
   setLetterSpacing(ctx, LETTER_SPACING_LINE2);
   const line2Y = line1Y + line1Size * LINE1_LINE_HEIGHT_RATIO + LINE_GAP_PX;
+  ctx.lineWidth = 3;
+  ctx.strokeText(line2, centerX, line2Y);
+  ctx.fillStyle = fillColor;
   ctx.fillText(line2, centerX, line2Y);
+
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
 
   drawWatermark(ctx, photo);
 
@@ -189,11 +212,11 @@ export async function checkFit(
 
   const usable = photo.textZone.width * POSTER_LOGICAL_SIZE_PX - 2 * TEXT_ZONE_PADDING_PX;
 
-  ctx.font = `500 ${LINE1_FONT_PX}px "Cormorant Garamond"`;
+  ctx.font = `700 ${LINE1_FONT_PX}px "Cormorant Garamond"`;
   setLetterSpacing(ctx, LETTER_SPACING_LINE1);
   const line1Width = ctx.measureText(line1).width;
 
-  ctx.font = `italic 400 ${LINE2_FONT_PX}px "Cormorant Garamond"`;
+  ctx.font = `italic 600 ${LINE2_FONT_PX}px "Cormorant Garamond"`;
   setLetterSpacing(ctx, LETTER_SPACING_LINE2);
   const line2Width = ctx.measureText(line2).width;
 
@@ -201,9 +224,5 @@ export async function checkFit(
   const line2Scale = line2Width <= usable ? 1 : usable / line2Width;
   const minScale = Math.min(line1Scale, line2Scale);
 
-  if (minScale >= MIN_FIT_SCALE) {
-    return { ok: true, scale: minScale };
-  }
-
-  return { ok: false, reason: 'overflow' };
+  return { ok: true, scale: minScale };
 }
