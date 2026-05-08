@@ -244,11 +244,8 @@ export default function App() {
         />
         <div className="relative z-10">
           <Header />
-          <div className="text-center px-4 pt-4 pb-16 lg:pb-20 space-y-8 max-w-2xl mx-auto">
-            <h1 className="font-serif text-display lg:text-display-lg italic text-white drop-shadow-[0_2px_16px_rgba(0,0,0,0.6)] [text-shadow:0_2px_16px_rgba(0,0,0,0.6),0_0_50px_rgba(0,0,0,0.3)]">
-              Tell me about your day
-            </h1>
-            <p className="font-serif text-lg lg:text-xl text-white max-w-lg mx-auto leading-relaxed [text-shadow:0_2px_12px_rgba(0,0,0,0.7),0_0_40px_rgba(0,0,0,0.4)]">
+          <div className="text-center px-4 pt-4 pb-4 lg:pb-5 space-y-6 max-w-2xl mx-auto">
+            <p className="font-serif text-xl lg:text-2xl text-white max-w-lg mx-auto leading-relaxed [text-shadow:0_2px_8px_rgba(0,0,0,0.9),0_0_30px_rgba(0,0,0,0.6),0_0_60px_rgba(0,0,0,0.3)]">
               Affirmation posters for people who hate affirmations.
               <br />
               Type your situation, get a savagely honest poster. Download, share, heal. Somehow.
@@ -259,7 +256,10 @@ export default function App() {
       </section>
 
       <main className="px-4 pt-4 pb-4">
-        <div className="text-center space-y-4 max-w-2xl mx-auto">
+        <div className="text-center max-w-2xl mx-auto">
+          <h1 className="font-serif text-headline-lg lg:text-display italic text-ink-deep mb-5">
+            Tell me about your day
+          </h1>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -287,7 +287,7 @@ export default function App() {
           </form>
 
           {inlineError && (
-            <p role="alert" className="text-caption text-ink-faint italic">{inlineError}</p>
+            <p role="alert" className="mt-4 text-caption text-ink-faint italic">{inlineError}</p>
           )}
         </div>
 
