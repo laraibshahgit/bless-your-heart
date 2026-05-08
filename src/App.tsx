@@ -248,6 +248,11 @@ export default function App() {
             <h1 className="font-serif text-display lg:text-display-lg italic text-white drop-shadow-[0_2px_16px_rgba(0,0,0,0.6)] [text-shadow:0_2px_16px_rgba(0,0,0,0.6),0_0_50px_rgba(0,0,0,0.3)]">
               Tell me about your day
             </h1>
+            <p className="font-serif text-lg lg:text-xl text-white max-w-lg mx-auto leading-relaxed [text-shadow:0_2px_12px_rgba(0,0,0,0.7),0_0_40px_rgba(0,0,0,0.4)]">
+              Affirmation posters for people who hate affirmations.
+              <br />
+              Type your situation, get a savagely honest poster. Download, share, heal. Somehow.
+            </p>
             <HeroExamples />
           </div>
         </div>
