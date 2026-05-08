@@ -7,7 +7,7 @@ import { parseGenerationOutput, checkSpecificity } from '../../src/server/valida
 import { selectPhoto } from '../../src/server/photoSelection';
 import { getHotlineForCountry } from '../../src/server/hotlines';
 import { safeFallbacks } from '../../src/server/fallbacks';
-import { getCuratedOutput } from '../../src/server/curated-outputs';
+import { getCuratedOutput, matchesCuratedTrigger } from '../../src/server/curated-outputs';
 import photos from '../../src/data/photos.json';
 import {
   MAX_PROMPT_LENGTH,
@@ -209,6 +209,45 @@ const handler: Handler = async (event: HandlerEvent) => {
     const prompt = normalizePrompt(parsed.prompt);
     const { excludePhotoIds, excludeCuratedIndices } = parsed;
 
+    // ── Curated fast path ──
+    // Pre-approved outputs for known triggers. Skips rate limit, safety
+    // filters, and API calls — pure memory lookup + photo selection.
+    const curated = getCuratedOutput(prompt, excludeCuratedIndices);
+    if (curated) {
+      const photoResult = selectPhoto(
+        typedPhotos,
+        curated.line1.length,
+        curated.line2.length,
+        excludePhotoIds
+      );
+      if (photoResult) {
+        logEvent('gen_ok', {
+          curated: true,
+          curatedIndex: curated.index,
+          fittingRung: photoResult.rung,
+          retries: 0,
+          duration_ms: 0,
+        });
+        return jsonResponse(
+          {
+            status: 'ok',
+            line1: curated.line1,
+            line2: curated.line2,
+            photoId: photoResult.photoId,
+            fittingRung: photoResult.rung,
+            curatedIndex: curated.index,
+          },
+          200,
+          withRequestId({}, requestId)
+        );
+      }
+    }
+
+    // Pool exhaustion: prompt matches a known trigger but all curated pairs
+    // have been shown. Signal the generation loop to use diversity mode so
+    // the model doesn't anchor on the matching EXAMPLES section.
+    const poolExhausted = curated === null && matchesCuratedTrigger(prompt);
+
     const rawIp = getClientIp(event.headers);
     const hashedIp = hashIp(rawIp);
 
@@ -291,37 +330,6 @@ const handler: Handler = async (event: HandlerEvent) => {
       );
     }
 
-    const curated = getCuratedOutput(prompt, excludeCuratedIndices);
-    if (curated) {
-      const photoResult = selectPhoto(
-        typedPhotos,
-        curated.line1.length,
-        curated.line2.length,
-        excludePhotoIds
-      );
-      if (photoResult) {
-        logEvent('gen_ok', {
-          curated: true,
-          curatedIndex: curated.index,
-          fittingRung: photoResult.rung,
-          retries: 0,
-          duration_ms: 0,
-        });
-        return jsonResponse(
-          {
-            status: 'ok',
-            line1: curated.line1,
-            line2: curated.line2,
-            photoId: photoResult.photoId,
-            fittingRung: photoResult.rung,
-            curatedIndex: curated.index,
-          },
-          200,
-          successRateHeaders
-        );
-      }
-    }
-
     let lastOutput = null;
     let retries = 0;
     // Track the cumulative wall time spent on the Anthropic retry loop. Surfaced
@@ -333,7 +341,7 @@ const handler: Handler = async (event: HandlerEvent) => {
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const raw = await generateLines(anthropic, prompt);
+        const raw = await generateLines(anthropic, prompt, { diversityMode: poolExhausted });
         const output = parseGenerationOutput(raw);
 
         if (!output) {

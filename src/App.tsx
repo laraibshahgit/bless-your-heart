@@ -153,9 +153,14 @@ export default function App() {
         prefetchPhoto(result.photoId);
       }
 
-      const elapsed = performance.now() - startedAt;
-      const remaining = Math.max(0, LOAD_FLOOR_MS - elapsed);
-      if (remaining > 0) await sleep(remaining);
+      // Curated outputs are pre-approved memory lookups — skip the
+      // anticipation beat so they display instantly (<200ms total).
+      const isCurated = result.status === 'ok' && result.curatedIndex !== undefined;
+      if (!isCurated) {
+        const elapsed = performance.now() - startedAt;
+        const remaining = Math.max(0, LOAD_FLOOR_MS - elapsed);
+        if (remaining > 0) await sleep(remaining);
+      }
 
       // Re-check after the LOAD_FLOOR_MS sleep — the user could have
       // triggered a new generation during the anticipation beat.

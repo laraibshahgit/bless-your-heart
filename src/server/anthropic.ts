@@ -390,20 +390,32 @@ Return ONLY a JSON object. No prose, no preamble, no code fences.
 
 Do not include any other fields. Do not explain. Do not apologize. Do not warn about content. Just the object.`;
 
+const DIVERSITY_ADDENDUM = `
+
+DIVERSITY OVERRIDE
+
+The user has already seen curated example outputs for this situation. If the user prompt closely matches one of the situation labels in the EXAMPLES section, you must generate output with substantially different specific imagery, vocabulary, and angle than ALL the example pairs for that situation. Look at the 4 example pairs for the matching situation — your output must use different setups, different pivots, different specifics. Do not paraphrase the examples. Take a completely fresh angle. The examples define the voice and quality bar. They do not define the content — find new content.`;
+
+const DIVERSITY_TEMPERATURE = 1.0;
+
 export async function generateLines(
   anthropic: Anthropic,
-  prompt: string
+  prompt: string,
+  options?: { diversityMode?: boolean }
 ): Promise<string> {
+  const systemText = options?.diversityMode
+    ? VOICE_SYSTEM_PROMPT + DIVERSITY_ADDENDUM
+    : VOICE_SYSTEM_PROMPT;
+  const temperature = options?.diversityMode
+    ? DIVERSITY_TEMPERATURE
+    : GENERATION_TEMPERATURE;
+
   const response = await anthropic.messages.create(
     {
       model: process.env.ANTHROPIC_MODEL_GEN ?? 'claude-sonnet-4-6',
       max_tokens: GENERATION_MAX_TOKENS,
-      temperature: GENERATION_TEMPERATURE,
-      // System prompt is sent as a content-block array (instead of a bare
-      // string) so the cache_control marker can attach to the static voice
-      // prefix. The prompt text itself is unchanged — this is a wire-format
-      // tweak that Anthropic uses to identify the cacheable prefix.
-      system: [{ type: 'text', text: VOICE_SYSTEM_PROMPT, cache_control: PROMPT_CACHE_CONTROL }],
+      temperature,
+      system: [{ type: 'text', text: systemText, cache_control: PROMPT_CACHE_CONTROL }],
       messages: [{ role: 'user', content: prompt }],
     },
     { timeout: ANTHROPIC_REQUEST_TIMEOUT_MS }

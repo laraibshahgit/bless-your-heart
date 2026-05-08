@@ -162,6 +162,10 @@ for (const sit of situations) {
   }
 }
 
+export function matchesCuratedTrigger(prompt: string): boolean {
+  return triggerMap.has(prompt.toLowerCase().trim());
+}
+
 export function getCuratedOutput(
   prompt: string,
   excludeIndices: number[] = []

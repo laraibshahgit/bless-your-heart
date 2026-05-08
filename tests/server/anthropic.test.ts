@@ -173,6 +173,32 @@ describe('generateLines', () => {
     const opts = anthropic.messages.create.mock.calls[0][1];
     expect(opts).toEqual({ timeout: ANTHROPIC_REQUEST_TIMEOUT_MS });
   });
+
+  it('appends DIVERSITY OVERRIDE to system prompt when diversityMode is true', async () => {
+    const anthropic = makeAnthropic({ content: [{ type: 'text', text: '{}' }] });
+    await generateLines(anthropic, 'Monday again', { diversityMode: true });
+    const args = anthropic.messages.create.mock.calls[0][0];
+    const systemText = args.system[0].text;
+    expect(systemText).toContain(VOICE_SYSTEM_PROMPT);
+    expect(systemText).toContain('DIVERSITY OVERRIDE');
+    expect(systemText).toContain('substantially different specific imagery');
+  });
+
+  it('uses temperature 1.0 when diversityMode is true', async () => {
+    const anthropic = makeAnthropic({ content: [{ type: 'text', text: '{}' }] });
+    await generateLines(anthropic, 'Monday again', { diversityMode: true });
+    const args = anthropic.messages.create.mock.calls[0][0];
+    expect(args.temperature).toBe(1.0);
+  });
+
+  it('uses standard temperature 0.9 when diversityMode is false or omitted', async () => {
+    const anthropic = makeAnthropic({ content: [{ type: 'text', text: '{}' }] });
+    await generateLines(anthropic, 'work');
+    expect(anthropic.messages.create.mock.calls[0][0].temperature).toBe(0.9);
+
+    await generateLines(anthropic, 'work', { diversityMode: false });
+    expect(anthropic.messages.create.mock.calls[1][0].temperature).toBe(0.9);
+  });
 });
 
 describe('checkTone', () => {
@@ -189,9 +215,9 @@ describe('checkTone', () => {
     expect(await checkTone(anthropic, 'work', 'The week loops without consent.')).toBe(true);
   });
 
-  it('returns false when verdict starts with "user"', async () => {
+  it('returns false when verdict starts with "user" (genuinely harmful content)', async () => {
     const anthropic = makeAnthropic({ content: [{ type: 'text', text: 'user' }] });
-    expect(await checkTone(anthropic, 'work', 'You are a failure as a person.')).toBe(false);
+    expect(await checkTone(anthropic, 'work', 'You deserve to suffer for who you are.')).toBe(false);
   });
 
   it('is case-insensitive on the verdict', async () => {
